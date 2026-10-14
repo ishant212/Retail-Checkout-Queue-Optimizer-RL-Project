@@ -7,16 +7,21 @@ export default function Header({
   onResetQueues,
   isBenchmarking,
   totalWaiting,
-  onToggleMobileSidebar
+  onToggleMobileSidebar,
+  activeModelName = 'Reinforcement Learning'
 }) {
   const titles = {
     overview: {
       title: 'Retail Operations & Queue Intelligence',
       desc: 'Real-time telemetry and reinforcement learning queue dispatch analysis'
     },
+    comparison: {
+      title: 'Comparative Benchmark & Academic Paper Table IV',
+      desc: 'Rigorous empirical evaluation across 9 RL algorithms and 2 heuristic baselines'
+    },
     simulation: {
       title: 'Autonomous Checkout Lanes Simulator',
-      desc: 'Live interactive 3-lane dispatching with Tabular Q-Learning control'
+      desc: `Live interactive 3-lane dispatching with ${activeModelName} control`
     },
     policy: {
       title: 'RL Policy & Action-Value Studio',

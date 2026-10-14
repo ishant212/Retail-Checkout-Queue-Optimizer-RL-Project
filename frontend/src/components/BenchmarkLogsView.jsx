@@ -11,17 +11,30 @@ import {
   Legend,
   ResponsiveContainer
 } from 'recharts';
-import { Download, Search, FileSpreadsheet, Trophy, ArrowDownRight, TrendingDown } from 'lucide-react';
+import { Download, Search, FileSpreadsheet, Trophy, ArrowDownRight, TrendingDown, Clock, Users, DollarSign, Activity } from 'lucide-react';
 
 export default function BenchmarkLogsView({ benchmarkData }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedActionFilter, setSelectedActionFilter] = useState('all');
+  const [activeChartMetric, setActiveChartMetric] = useState('totalWait');
 
   const steps = benchmarkData?.stepDetails || [];
   const randTotalWait = benchmarkData?.randomTotalWait ?? 381;
   const optTotalWait = benchmarkData?.optimizedTotalWait ?? 268;
   const reductionPct = benchmarkData?.congestionReductionPct ?? 29.66;
   const leaderboard = benchmarkData?.leaderboard || [];
+
+  const formatAction = (act) => {
+    if (act === null || act === undefined) return 'Hold';
+    if (typeof act === 'string') return act;
+    const a = Number(act);
+    if (a >= 0 && a < 10) return `Route L${a}`;
+    if (a >= 10 && a < 20) return `Open L${a - 10}`;
+    if (a >= 20 && a < 30) return `Close L${a - 20}`;
+    if (a >= 30 && a < 40) return `Convert L${a - 30}`;
+    if (a === 40) return 'Hold';
+    return `Action ${a}`;
+  };
 
   // Filter logs
   const filteredSteps = steps.filter((s) => {
@@ -33,25 +46,39 @@ export default function BenchmarkLogsView({ benchmarkData }) {
   // Export CSV
   const exportCSV = () => {
     if (!steps.length) return;
-    const headers = 'Step,Random_L0,Random_L1,Random_L2,Random_Total,Random_Action,Opt_L0,Opt_L1,Opt_L2,Opt_Total,Opt_Action,Savings\n';
+    const headers = 'Step,Random_Lanes,Random_Total,Random_Action,Opt_Lanes,Opt_Total,Opt_Action,Savings\n';
     const rows = steps.map((s) =>
-      `${s.step},${s.randomLanes[0]},${s.randomLanes[1]},${s.randomLanes[2]},${s.randomTotal},Lane ${s.randomAction},${s.optLanes[0]},${s.optLanes[1]},${s.optLanes[2]},${s.optTotal},Lane ${s.optAction},${s.waitDifference}`
+      `"${s.step}","[${s.randomLanes.join(';')}]",${s.randomTotal},"${formatAction(s.randomAction)}","[${s.optLanes.join(';')}]",${s.optTotal},"${formatAction(s.optAction)}",${s.waitDifference}`
     ).join('\n');
 
     const blob = new Blob([headers + rows], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `optiqueue_multi_model_benchmark_100steps.csv`;
+    a.download = `optiqueue_10lane_benchmark_100steps.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const chartData = leaderboard.map((m) => ({
     name: m.name,
-    totalWait: m.totalWait,
-    improvement: m.improvement
+    totalWait: m.totalWait ?? 0,
+    congestionDuration: m.congestionDuration ?? 0,
+    customersServed: m.customersServed ?? 0,
+    operatingCost: m.operatingCost ?? 0,
+    cumulativeReward: m.cumulativeReward ?? 0,
+    improvement: m.improvement ?? 0
   }));
+
+  const METRIC_CONFIG = {
+    totalWait: { label: 'Total Customer Wait', color: '#f05136', unit: 'wait-units' },
+    congestionDuration: { label: 'Congestion Duration', color: '#ef4444', unit: 'steps' },
+    customersServed: { label: 'Customers Served', color: '#10b981', unit: 'served' },
+    operatingCost: { label: 'Operating Cost', color: '#d97706', unit: '$' },
+    cumulativeReward: { label: 'Cumulative Reward', color: '#6366f1', unit: 'reward' }
+  };
+
+  const activeConf = METRIC_CONFIG[activeChartMetric] || METRIC_CONFIG.totalWait;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -64,7 +91,7 @@ export default function BenchmarkLogsView({ benchmarkData }) {
               <h2 style={{ fontSize: '1.25rem' }}>100-Timestep Multi-Model Benchmark Arena</h2>
             </div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-              Side-by-side evaluation across all 6 Reinforcement Learning algorithms and heuristic baselines under identical seeds.
+              Side-by-side empirical evaluation across all 9 Reinforcement Learning algorithms and heuristic baselines under identical seeds.
             </p>
           </div>
 
@@ -92,7 +119,7 @@ export default function BenchmarkLogsView({ benchmarkData }) {
               {leaderboard[0]?.totalWait ?? optTotalWait} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>units</span>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Leader: {leaderboard[0]?.name ?? 'Q-Learning'}
+              Leader: {leaderboard[0]?.name ?? 'Double DQN'}
             </div>
           </div>
 
@@ -109,10 +136,10 @@ export default function BenchmarkLogsView({ benchmarkData }) {
           <div style={{ padding: '16px', borderRadius: '10px', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)' }}>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Models Evaluated</div>
             <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--accent-color)', marginTop: '4px' }}>
-              {leaderboard.length || 8} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>policies</span>
+              {leaderboard.length || 11} <span style={{ fontSize: '0.8rem', fontWeight: 400 }}>policies</span>
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              6 RL + 2 Baselines
+              {leaderboard.length ? `${leaderboard.length - 2} RL + 2 Baselines` : '9 RL + 2 Baselines'}
             </div>
           </div>
         </div>
@@ -125,22 +152,25 @@ export default function BenchmarkLogsView({ benchmarkData }) {
           <div className="card-header">
             <div className="card-title-group">
               <Trophy size={18} color="#f59e0b" />
-              <span className="card-title">Multi-Model Performance Ranking</span>
+              <span className="card-title">Multi-Model Performance Ranking (All 11 Policies)</span>
             </div>
             <span className="badge badge-success">Ranked by Total Wait</span>
           </div>
 
           <div className="card-body" style={{ padding: '0' }}>
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.82rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
-                    <th style={{ padding: '10px 14px' }}>Rank</th>
-                    <th style={{ padding: '10px 14px' }}>Algorithm</th>
-                    <th style={{ padding: '10px 14px' }}>Type</th>
-                    <th style={{ padding: '10px 14px' }}>Total Wait</th>
-                    <th style={{ padding: '10px 14px' }}>Avg / Step</th>
-                    <th style={{ padding: '10px 14px' }}>Reduction</th>
+                    <th style={{ padding: '10px 12px' }}>Rank</th>
+                    <th style={{ padding: '10px 12px' }}>Algorithm</th>
+                    <th style={{ padding: '10px 12px' }}>Type</th>
+                    <th style={{ padding: '10px 12px' }}>Total Wait</th>
+                    <th style={{ padding: '10px 12px' }}>Congestion Dur</th>
+                    <th style={{ padding: '10px 12px' }}>Served</th>
+                    <th style={{ padding: '10px 12px' }}>Cost</th>
+                    <th style={{ padding: '10px 12px' }}>Reward</th>
+                    <th style={{ padding: '10px 12px' }}>Reduction</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -148,7 +178,7 @@ export default function BenchmarkLogsView({ benchmarkData }) {
                     const isWinner = idx === 0;
                     return (
                       <tr key={m.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                        <td style={{ padding: '10px 14px', fontWeight: 800 }}>
+                        <td style={{ padding: '10px 12px', fontWeight: 800 }}>
                           <span style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -163,12 +193,19 @@ export default function BenchmarkLogsView({ benchmarkData }) {
                             #{idx + 1}
                           </span>
                         </td>
-                        <td style={{ padding: '10px 14px', fontWeight: 700 }}>{m.name}</td>
-                        <td style={{ padding: '10px 14px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>{m.tag}</td>
-                        <td style={{ padding: '10px 14px', fontWeight: 700, fontFamily: 'monospace' }}>{m.totalWait}</td>
-                        <td style={{ padding: '10px 14px', fontFamily: 'monospace' }}>{m.avgWait}</td>
+                        <td style={{ padding: '10px 12px', fontWeight: 700 }}>{m.name}</td>
+                        <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: '0.74rem' }}>{m.tag}</td>
+                        <td style={{ padding: '10px 12px', fontWeight: 700, fontFamily: 'monospace' }}>{m.totalWait}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: (m.congestionDuration ?? 0) > 0 ? '#ef4444' : '#10b981' }}>
+                          {m.congestionDuration ?? 0}s
+                        </td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: '#10b981' }}>{m.customersServed ?? '-'}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>${m.operatingCost ?? '-'}</td>
+                        <td style={{ padding: '10px 12px', fontFamily: 'monospace', color: (m.cumulativeReward ?? 0) >= 0 ? '#10b981' : '#ef4444' }}>
+                          {m.cumulativeReward ?? '-'}
+                        </td>
                         <td style={{
-                          padding: '10px 14px',
+                          padding: '10px 12px',
                           fontWeight: 700,
                           color: m.improvement > 0 ? '#10b981' : m.improvement < 0 ? '#ef4444' : 'var(--text-muted)'
                         }}>
@@ -183,16 +220,41 @@ export default function BenchmarkLogsView({ benchmarkData }) {
           </div>
         </div>
 
-        {/* Total Wait Comparison Bar Chart */}
+        {/* Multi-Metric Comparison Bar Chart */}
         <div className="glass-card">
           <div className="card-header">
             <div className="card-title-group">
-              <span className="card-title">Total Wait-Units by Algorithm</span>
+              <span className="card-title">{activeConf.label} by Algorithm</span>
             </div>
-            <span className="badge badge-info">Lower is Better</span>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              {[
+                { id: 'totalWait', label: 'Wait' },
+                { id: 'congestionDuration', label: 'Congestion' },
+                { id: 'customersServed', label: 'Served' },
+                { id: 'operatingCost', label: 'Cost' },
+                { id: 'cumulativeReward', label: 'Reward' }
+              ].map((btn) => (
+                <button
+                  key={btn.id}
+                  onClick={() => setActiveChartMetric(btn.id)}
+                  style={{
+                    padding: '3px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.72rem',
+                    fontWeight: 600,
+                    border: '1px solid var(--border-color)',
+                    background: activeChartMetric === btn.id ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                    color: activeChartMetric === btn.id ? '#ffffff' : 'var(--text-primary)',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {btn.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="card-body" style={{ height: '320px' }}>
+          <div className="card-body" style={{ height: '340px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} layout="vertical" margin={{ top: 10, right: 20, left: 40, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" opacity={0.6} />
@@ -200,13 +262,16 @@ export default function BenchmarkLogsView({ benchmarkData }) {
                 <YAxis dataKey="name" type="category" stroke="var(--text-muted)" fontSize={11} width={120} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     borderColor: 'var(--border-color)',
                     borderRadius: '8px',
-                    color: 'var(--text-primary)'
+                    color: 'var(--text-primary)',
+                    boxShadow: 'var(--shadow-md)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
-                <Bar dataKey="totalWait" name="Total Customer Wait" fill="#10b981" radius={[0, 6, 6, 0]} />
+                <Bar dataKey={activeChartMetric} name={activeConf.label} fill={activeConf.color} radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -244,12 +309,12 @@ export default function BenchmarkLogsView({ benchmarkData }) {
         <div className="card-body" style={{ padding: 0 }}>
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-              <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 10 }}>
-                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
+              <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-tertiary)', zIndex: 10 }}>
+                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-primary)', fontWeight: 700 }}>
                   <th style={{ padding: '10px 14px' }}>Step</th>
-                  <th style={{ padding: '10px 14px' }}>Random Queue [0, 1, 2]</th>
+                  <th style={{ padding: '10px 14px' }}>Random Queue [L0..L9]</th>
                   <th style={{ padding: '10px 14px' }}>Random Action</th>
-                  <th style={{ padding: '10px 14px' }}>RL Queue [0, 1, 2]</th>
+                  <th style={{ padding: '10px 14px' }}>RL Queue [L0..L9]</th>
                   <th style={{ padding: '10px 14px' }}>RL Action</th>
                   <th style={{ padding: '10px 14px' }}>Wait Difference</th>
                 </tr>
@@ -262,13 +327,13 @@ export default function BenchmarkLogsView({ benchmarkData }) {
                       [{s.randomLanes.join(', ')}] = {s.randomTotal}
                     </td>
                     <td style={{ padding: '10px 14px', color: '#ef4444', fontWeight: 600 }}>
-                      Lane {s.randomAction}
+                      {formatAction(s.randomAction)}
                     </td>
                     <td style={{ padding: '10px 14px', fontFamily: 'monospace', color: '#10b981', fontWeight: 600 }}>
                       [{s.optLanes.join(', ')}] = {s.optTotal}
                     </td>
                     <td style={{ padding: '10px 14px', color: '#10b981', fontWeight: 600 }}>
-                      Lane {s.optAction}
+                      {formatAction(s.optAction)}
                     </td>
                     <td style={{ padding: '10px 14px', fontWeight: 700, color: s.waitDifference >= 0 ? '#10b981' : '#ef4444' }}>
                       {s.waitDifference >= 0 ? `+${s.waitDifference}` : s.waitDifference}

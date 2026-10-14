@@ -1,72 +1,81 @@
 import numpy as np
+from collections import defaultdict
 from .base import BaseQueueAgent
 
 class ContextualBanditAgent(BaseQueueAgent):
     """
     Multi-Armed Bandit with UCB1 (Upper Confidence Bound) and Contextual Arm Payoffs.
-    Arms: {0: Counter 0 (Fast), 1: Counter 1 (Mid), 2: Counter 2 (Slow)}
+    Arms: 41 discrete actions across 10 checkout lanes.
     Decision rule:
        a = argmax_a [ mu(s, a) + c * sqrt(ln(N(s) + 1) / (N(s, a) + 1)) ]
     Serves as an adaptive, zero-discount (gamma=0) immediate-reward baseline.
+    Compatible with 10-lane environment, 35 tabular features, and 41 discrete actions.
     """
-    def __init__(self, num_counters=3, max_queue_len=5, c_param=1.2, epsilon=0.1):
-        super().__init__("Multi-Armed Bandit", "bandit", num_counters, max_queue_len)
+    def __init__(self, num_counters=10, max_queue_len=6, c_param=1.2, epsilon=0.1, num_actions=41):
+        super().__init__("Multi-Armed Bandit", "bandit", num_counters, max_queue_len, num_actions)
         self.c_param = c_param
         self.epsilon = epsilon
+        self.feature_dim = 35
 
         # State-action counts and mean estimated rewards
-        self.counts = np.zeros(self.state_shape + (self.num_counters,), dtype=np.int32)
-        self.rewards = np.zeros(self.state_shape + (self.num_counters,), dtype=np.float64)
+        self.counts = defaultdict(lambda: np.zeros(self.num_actions, dtype=np.int32))
+        self.rewards = defaultdict(lambda: np.zeros(self.num_actions, dtype=np.float64))
 
-        # Global arm counters
-        self.global_counts = np.zeros(self.num_counters, dtype=np.int32)
-        self.global_rewards = np.zeros(self.num_counters, dtype=np.float64)
+        # Global arm statistics
+        self.global_counts = np.zeros(self.num_actions, dtype=np.int32)
+        self.global_rewards = np.zeros(self.num_actions, dtype=np.float64)
+
+    def state_to_context(self, state):
+        """Derives documented context tuple from the 35 tabular features."""
+        return self.state_to_key(state)
 
     def choose_action(self, state, explore=True):
-        state = tuple(int(x) for x in state)
+        c = self.state_to_context(state)
         if explore and np.random.rand() < self.epsilon:
-            return int(np.random.choice(self.num_counters))
+            return int(np.random.choice(self.num_actions))
 
-        total_n = np.sum(self.counts[state])
+        state_counts = self.counts[c]
+        total_n = np.sum(state_counts)
         if total_n == 0:
-            # Unvisited state: prioritize lane with shortest active queue
-            return int(np.argmin(state))
+            # Cold-start state: prioritize open counter with shortest queue or action 0
+            if hasattr(state, "queue_lengths"):
+                return int(np.argmin(state.queue_lengths))
+            elif isinstance(state, (tuple, list)) and len(state) >= 3:
+                return int(np.argmin(state[:3]))
+            return 0
 
         # UCB1 score for each arm
-        ucb_values = np.zeros(self.num_counters)
-        for a in range(self.num_counters):
-            n_a = self.counts[state][a]
+        ucb_values = np.zeros(self.num_actions)
+        for a in range(self.num_actions):
+            n_a = state_counts[a]
             if n_a == 0:
-                ucb_values[a] = 1e6  # Ensure all arms are pulled at least once
+                ucb_values[a] = 1e6
             else:
-                bonus = self.c_param * np.sqrt(np.log(total_n + 1.0) / (n_a))
-                ucb_values[a] = self.rewards[state][a] + bonus
+                bonus = self.c_param * np.sqrt(np.log(total_n + 1.0) / float(n_a))
+                ucb_values[a] = self.rewards[c][a] + bonus
 
         return int(np.argmax(ucb_values))
 
-    def update(self, state, action, reward, next_state=None):
-        state = tuple(int(x) for x in state)
-        # Update state-specific estimates
-        self.counts[state][action] += 1
-        n = self.counts[state][action]
-        # Incremental mean update: mu <- mu + (R - mu) / n
-        self.rewards[state][action] += (reward - self.rewards[state][action]) / n
+    def update(self, state, action, reward, next_state=None, done=False):
+        c = self.state_to_context(state)
+        self.counts[c][action] += 1
+        n = self.counts[c][action]
+        self.rewards[c][action] += (reward - self.rewards[c][action]) / float(n)
 
-        # Update global arm stats
         self.global_counts[action] += 1
         gn = self.global_counts[action]
-        self.global_rewards[action] += (reward - self.global_rewards[action]) / gn
+        self.global_rewards[action] += (reward - self.global_rewards[action]) / float(gn)
 
     def get_action_values(self, state):
-        state = tuple(int(x) for x in state)
-        total_n = np.sum(self.counts[state])
-        # Return expected reward + UCB exploration score
+        c = self.state_to_context(state)
+        state_counts = self.counts[c]
+        total_n = np.sum(state_counts)
         vals = []
-        for a in range(self.num_counters):
-            n_a = self.counts[state][a]
+        for a in range(self.num_actions):
+            n_a = state_counts[a]
             if n_a == 0:
                 vals.append(float(self.global_rewards[a]))
             else:
-                bonus = self.c_param * np.sqrt(np.log(total_n + 1.0) / (n_a))
-                vals.append(float(self.rewards[state][a] + bonus))
+                bonus = self.c_param * np.sqrt(np.log(total_n + 1.0) / float(n_a))
+                vals.append(float(self.rewards[c][a] + bonus))
         return vals

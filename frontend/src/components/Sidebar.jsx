@@ -8,9 +8,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Sun,
-  Moon,
-  Activity,
   Sparkles,
   Scale
 } from 'lucide-react';
@@ -20,8 +17,6 @@ export default function Sidebar({
   setActiveTab,
   isCollapsed,
   setIsCollapsed,
-  theme,
-  toggleTheme,
   backendConnected,
   trainedEpisodes
 }) {
@@ -79,7 +74,7 @@ export default function Sidebar({
       </nav>
 
       <div className="sidebar-footer">
-        {!isCollapsed && (
+        {!isCollapsed ? (
           <div className="status-pill">
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div className={`status-dot ${backendConnected ? '' : 'offline'}`} />
@@ -91,23 +86,11 @@ export default function Sidebar({
               {trainedEpisodes} Ep
             </span>
           </div>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'center' }} title={backendConnected ? 'API Online' : 'API Offline'}>
+            <div className={`status-dot ${backendConnected ? '' : 'offline'}`} />
+          </div>
         )}
-
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'space-between' }}>
-          <button
-            className="theme-toggle-btn"
-            onClick={toggleTheme}
-            title={theme === 'dark' ? 'Switch to Light Theme' : 'Switch to Dark Theme'}
-            aria-label="Toggle Color Theme"
-          >
-            {theme === 'dark' ? <Sun size={18} color="#f59e0b" /> : <Moon size={18} color="#3b82f6" />}
-          </button>
-          {!isCollapsed && (
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              {theme === 'dark' ? 'Dark Mode' : 'Light Mode'}
-            </span>
-          )}
-        </div>
       </div>
     </aside>
   );

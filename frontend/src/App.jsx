@@ -13,27 +13,50 @@ import { api } from './api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
-  const [theme, setTheme] = useState(() => localStorage.getItem('optiqueue_theme') || 'dark');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   // Status & Telemetry
   const [backendConnected, setBackendConnected] = useState(false);
   const [trainedEpisodes, setTrainedEpisodes] = useState(250);
-  const [serviceRates, setServiceRates] = useState([0.6, 0.4, 0.3]);
-  const [maxQueueLen, setMaxQueueLen] = useState(5);
+  const [modelEpisodes, setModelEpisodes] = useState({
+    q_learning: 250,
+    sarsa: 250,
+    bandit: 250,
+    reinforce: 200,
+    a2c: 200,
+    ppo: 200,
+    dqn: 200,
+    double_dqn: 250,
+    ddpg: 150
+  });
+  const [serviceRates, setServiceRates] = useState([0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5]);
+  const [maxQueueLen, setMaxQueueLen] = useState(6);
   const [availableModels, setAvailableModels] = useState([]);
 
-  // Interactive Simulation State
-  const [currentQueues, setCurrentQueues] = useState([1, 1, 0]);
+  // Interactive Simulation State (10 Lanes & 10 States)
+  const [currentQueues, setCurrentQueues] = useState(Array(10).fill(0));
+  const [openStatus, setOpenStatus] = useState([true, true, true, true, false, false, false, false, false, false]);
+  const [laneTypes, setLaneTypes] = useState(['express', 'standard', 'standard', 'large_basket', 'standard', 'standard', 'express', 'large_basket', 'flexible', 'flexible']);
+  const [capacities, setCapacities] = useState([4, 6, 6, 8, 6, 6, 4, 8, 6, 6]);
+  const [currentServing, setCurrentServing] = useState(Array(10).fill(null));
+  const [incomingBasketSize, setIncomingBasketSize] = useState(5);
+  const [isExpressEligible, setIsExpressEligible] = useState(true);
+  const [counterUtilization, setCounterUtilization] = useState(Array(10).fill(0));
   const [lastAction, setLastAction] = useState(null);
-  const [lastServed, setLastServed] = useState([false, false, false]);
-  const [qValues, setQValues] = useState([0, 0, 0]);
+  const [lastActionValid, setLastActionValid] = useState(true);
+  const [lastActionReason, setLastActionReason] = useState('');
+  const [lastServed, setLastServed] = useState(Array(10).fill(false));
+  const [qValues, setQValues] = useState(Array(10).fill(0));
+  const [allQValues, setAllQValues] = useState(Array(41).fill(0));
   const [recommendedAction, setRecommendedAction] = useState(0);
+  const [rewardBreakdown, setRewardBreakdown] = useState({});
+  const [stateComponents, setStateComponents] = useState({});
+  const [congestionDuration, setCongestionDuration] = useState({ step: 0, continuous: 0, total: 0 });
 
-  // Active Model & Policy Controls
+  // Active Model & Policy Controls (Defaults to Proposed Double DQN)
   const [isPlaying, setIsPlaying] = useState(false);
-  const [mode, setMode] = useState('q_learning');
+  const [mode, setMode] = useState('double_dqn');
   const [speed, setSpeed] = useState(1000);
   const [stepCount, setStepCount] = useState(0);
   const [totalReward, setTotalReward] = useState(0);
@@ -47,16 +70,6 @@ export default function App() {
 
   const autoPlayTimerRef = useRef(null);
 
-  // Theme Sync
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('optiqueue_theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  };
-
   // Initial Data Fetch
   useEffect(() => {
     let isMounted = true;
@@ -67,6 +80,7 @@ export default function App() {
         if (isMounted) {
           setBackendConnected(status.status === 'online');
           setTrainedEpisodes(status.trainedEpisodes);
+          if (status.modelEpisodes) setModelEpisodes(status.modelEpisodes);
           setServiceRates(status.serviceRates);
           setMaxQueueLen(status.maxQueueLen);
           if (status.models) setAvailableModels(status.models);
@@ -79,11 +93,21 @@ export default function App() {
         }
 
         // Reset interactive state
-        const initialInteractive = await api.resetInteractive();
+        const initialInteractive = await api.resetInteractive('double_dqn');
         if (isMounted) {
-          setCurrentQueues(initialInteractive.state);
-          setQValues(initialInteractive.qValues);
-          setRecommendedAction(initialInteractive.recommendedAction);
+          if (initialInteractive.state) setCurrentQueues(initialInteractive.state);
+          if (initialInteractive.openStatus) setOpenStatus(initialInteractive.openStatus);
+          if (initialInteractive.laneTypes) setLaneTypes(initialInteractive.laneTypes);
+          if (initialInteractive.capacities) setCapacities(initialInteractive.capacities);
+          if (initialInteractive.currentServing) setCurrentServing(initialInteractive.currentServing);
+          if (initialInteractive.counterUtilization) setCounterUtilization(initialInteractive.counterUtilization);
+          if (initialInteractive.incomingBasketSize !== undefined) setIncomingBasketSize(initialInteractive.incomingBasketSize);
+          if (initialInteractive.isExpressEligible !== undefined) setIsExpressEligible(initialInteractive.isExpressEligible);
+          setQValues(initialInteractive.qValues || Array(10).fill(0));
+          if (initialInteractive.allQValues) setAllQValues(initialInteractive.allQValues);
+          setRecommendedAction(initialInteractive.recommendedAction ?? 0);
+          setStateComponents(initialInteractive.stateComponents || {});
+          setCongestionDuration(initialInteractive.congestionDuration || {});
         }
 
         // Fetch initial SimPy arena run
@@ -105,6 +129,7 @@ export default function App() {
         if (isMounted) {
           setBackendConnected(s.status === 'online');
           if (s.models) setAvailableModels(s.models);
+          if (s.modelEpisodes) setModelEpisodes(s.modelEpisodes);
         }
       } catch {
         if (isMounted) setBackendConnected(false);
@@ -120,10 +145,12 @@ export default function App() {
   // Sync Q-values and action recommendation when mode switches
   useEffect(() => {
     if (['q_learning', 'sarsa', 'bandit', 'reinforce', 'a2c', 'ppo', 'dqn', 'double_dqn', 'ddpg'].includes(mode)) {
-      api.getQValues(currentQueues[0], currentQueues[1], currentQueues[2], mode)
+      api.selectModel(mode).catch(() => {});
+      api.getQValues(currentQueues[0] || 0, currentQueues[1] || 0, currentQueues[2] || 0, mode)
         .then((res) => {
-          setQValues(res.qValues);
-          setRecommendedAction(res.bestAction);
+          setQValues(res.qValues || Array(10).fill(0));
+          if (res.allQValues) setAllQValues(res.allQValues);
+          setRecommendedAction(res.bestAction ?? 0);
         })
         .catch(console.error);
     }
@@ -135,11 +162,25 @@ export default function App() {
       const res = await api.stepInteractive(actionOverride, mode);
       setCurrentQueues(res.nextState);
       setLastAction(res.action);
-      setLastServed(res.served);
-      setQValues(res.qValues);
+      setLastServed(res.served || Array(10).fill(false));
+      setQValues(res.qValues || Array(10).fill(0));
+      if (res.allQValues) setAllQValues(res.allQValues);
       setRecommendedAction(res.recommendedAction);
       setStepCount(res.step);
-      setTotalReward((prev) => prev + res.reward);
+      setTotalReward((prev) => res.cumulativeReward ?? (prev + res.reward));
+
+      if (res.openStatus) setOpenStatus(res.openStatus);
+      if (res.laneTypes) setLaneTypes(res.laneTypes);
+      if (res.capacities) setCapacities(res.capacities);
+      if (res.currentServing) setCurrentServing(res.currentServing);
+      if (res.incomingBasketSize !== undefined) setIncomingBasketSize(res.incomingBasketSize);
+      if (res.isExpressEligible !== undefined) setIsExpressEligible(res.isExpressEligible);
+      if (res.counterUtilization) setCounterUtilization(res.counterUtilization);
+      setLastActionValid(res.actionValid ?? true);
+      setLastActionReason(res.actionReason ?? '');
+      setRewardBreakdown(res.rewardBreakdown ?? {});
+      setStateComponents(res.stateComponents ?? {});
+      setCongestionDuration(res.congestionDuration ?? {});
     } catch (err) {
       console.error('Interactive step failed:', err);
     }
@@ -152,11 +193,24 @@ export default function App() {
       const res = await api.resetInteractive(mode);
       setCurrentQueues(res.state);
       setLastAction(null);
-      setLastServed([false, false, false]);
-      setQValues(res.qValues);
+      setLastServed(Array(10).fill(false));
+      setQValues(res.qValues || Array(10).fill(0));
+      if (res.allQValues) setAllQValues(res.allQValues);
       setRecommendedAction(res.recommendedAction);
       setStepCount(0);
       setTotalReward(0);
+
+      if (res.openStatus) setOpenStatus(res.openStatus);
+      if (res.laneTypes) setLaneTypes(res.laneTypes);
+      if (res.capacities) setCapacities(res.capacities);
+      if (res.currentServing) setCurrentServing(res.currentServing);
+      if (res.incomingBasketSize !== undefined) setIncomingBasketSize(res.incomingBasketSize);
+      if (res.isExpressEligible !== undefined) setIsExpressEligible(res.isExpressEligible);
+      setLastActionValid(true);
+      setLastActionReason('Session Reset');
+      setRewardBreakdown({});
+      setStateComponents(res.stateComponents ?? {});
+      setCongestionDuration(res.congestionDuration ?? {});
     } catch (err) {
       console.error('Reset failed:', err);
     }
@@ -201,6 +255,7 @@ export default function App() {
     try {
       const res = await api.train(config);
       setTrainedEpisodes(res.episodes);
+      if (res.modelEpisodes) setModelEpisodes(res.modelEpisodes);
       setTrainingHistory(res.history);
       if (config.serviceRates) {
         setServiceRates(config.serviceRates);
@@ -228,8 +283,6 @@ export default function App() {
         setActiveTab={setActiveTab}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
-        theme={theme}
-        toggleTheme={toggleTheme}
         backendConnected={backendConnected}
         trainedEpisodes={trainedEpisodes}
       />
@@ -243,6 +296,7 @@ export default function App() {
           isBenchmarking={isBenchmarking}
           totalWaiting={totalWaiting}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+          activeModelName={availableModels.find((m) => m.id === mode)?.name || mode.replace('_', ' ').toUpperCase()}
         />
 
         <main className="page-body">
@@ -251,10 +305,18 @@ export default function App() {
               benchmarkData={benchmarkData}
               currentQueues={currentQueues}
               serviceRates={serviceRates}
+              openStatus={openStatus}
+              laneTypes={laneTypes}
+              capacities={capacities}
+              currentServing={currentServing}
+              incomingBasketSize={incomingBasketSize}
+              isExpressEligible={isExpressEligible}
+              counterUtilization={counterUtilization}
               maxQueueLen={maxQueueLen}
               lastAction={lastAction}
               lastServed={lastServed}
               qValues={qValues}
+              allQValues={allQValues}
               recommendedAction={recommendedAction}
               isPlaying={isPlaying}
               onTogglePlay={() => setIsPlaying(!isPlaying)}
@@ -266,7 +328,13 @@ export default function App() {
               setSpeed={setSpeed}
               stepCount={stepCount}
               totalReward={totalReward}
+              lastActionValid={lastActionValid}
+              lastActionReason={lastActionReason}
+              rewardBreakdown={rewardBreakdown}
+              stateComponents={stateComponents}
+              congestionDuration={congestionDuration}
               onManualDispatch={(laneId) => handleStep(laneId)}
+              onManualAction={(act) => handleStep(act)}
             />
           )}
 
@@ -287,18 +355,29 @@ export default function App() {
                 setSpeed={setSpeed}
                 stepCount={stepCount}
                 totalReward={totalReward}
+                lastActionValid={lastActionValid}
+                lastActionReason={lastActionReason}
+                onManualAction={(act) => handleStep(act)}
               />
 
               <CheckoutLanesView
                 queues={currentQueues}
                 maxQueueLen={maxQueueLen}
                 serviceRates={serviceRates}
+                openStatus={openStatus}
+                laneTypes={laneTypes}
+                capacities={capacities}
+                currentServing={currentServing}
+                incomingBasketSize={incomingBasketSize}
+                isExpressEligible={isExpressEligible}
+                counterUtilization={counterUtilization}
                 lastAction={lastAction}
                 lastServed={lastServed}
                 qValues={qValues}
                 recommendedAction={recommendedAction}
                 mode={mode}
                 onManualDispatch={(laneId) => handleStep(laneId)}
+                onManualAction={(act) => handleStep(act)}
               />
             </div>
           )}
@@ -308,6 +387,7 @@ export default function App() {
               trainingHistory={trainingHistory}
               onRetrain={handleRetrain}
               isTraining={isTraining}
+              maxQueueLen={maxQueueLen}
             />
           )}
 
@@ -322,6 +402,7 @@ export default function App() {
           {activeTab === 'config' && (
             <ConfigModal
               serviceRates={serviceRates}
+              modelEpisodes={modelEpisodes}
               onUpdateConfig={handleRetrain}
               isTraining={isTraining}
             />

@@ -35,9 +35,20 @@ export const api = {
         activeModelId: 'q_learning',
         activeModelName: 'Q-Learning',
         trainedEpisodes: 250,
-        numCounters: 3,
-        maxQueueLen: 5,
-        serviceRates: [0.6, 0.4, 0.3],
+        modelEpisodes: {
+          q_learning: 250,
+          sarsa: 250,
+          bandit: 250,
+          reinforce: 200,
+          a2c: 200,
+          ppo: 200,
+          dqn: 200,
+          double_dqn: 250,
+          ddpg: 150
+        },
+        numCounters: 10,
+        maxQueueLen: 6,
+        serviceRates: [0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5],
         epsilon: 0.05,
         gamma: 0.95,
         alpha: 0.1,
@@ -116,5 +127,16 @@ export const api = {
 
   async getComparativeAnalysis(scenario = 'normal') {
     return await request(`/comparative_analysis?scenario=${encodeURIComponent(scenario)}`);
+  },
+
+  async getLanes() {
+    return await request('/lanes');
+  },
+
+  async updateLane(laneData) {
+    return await request('/lanes/update', {
+      method: 'POST',
+      body: JSON.stringify(laneData)
+    });
   }
 };

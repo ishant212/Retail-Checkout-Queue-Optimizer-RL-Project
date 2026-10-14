@@ -8,11 +8,12 @@ class DQNAgent(BaseQueueAgent):
     - Deep Neural Network approximating Q(s, a)
     - Experience Replay Buffer breaking sample correlation
     - Target Network stabilizing Bellman target: y = r + gamma * max_a' Q_target(s', a')
+    Compatible with 10-state 20-dim feature vector and 6 discrete actions.
     """
-    def __init__(self, num_counters=3, max_queue_len=5, gamma=0.95, lr=0.005,
+    def __init__(self, num_counters=10, max_queue_len=6, gamma=0.95, lr=0.005,
                  epsilon=0.4, epsilon_decay=0.995, min_epsilon=0.05,
-                 batch_size=32, target_update_freq=10):
-        super().__init__("DQN (Deep Q-Network)", "deep_rl", num_counters, max_queue_len)
+                 batch_size=32, target_update_freq=10, num_actions=41):
+        super().__init__("DQN (Deep Q-Network)", "deep_rl", num_counters, max_queue_len, num_actions)
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_decay = epsilon_decay
@@ -21,40 +22,36 @@ class DQNAgent(BaseQueueAgent):
         self.target_update_freq = target_update_freq
         self.step_count = 0
 
-        # Feature dim = 5 (q0/5, q1/5, q2/5, sum/15, var)
-        input_dim = 5
-        self.q_net = MLP(input_dim=input_dim, hidden_dim=32, output_dim=num_counters, lr=lr)
-        self.target_net = MLP(input_dim=input_dim, hidden_dim=32, output_dim=num_counters, lr=lr)
+        # Input feature dimension = 84 across all 10 states
+        input_dim = self.feature_dim
+        self.q_net = MLP(input_dim=input_dim, hidden_dim=64, output_dim=self.num_actions, lr=lr)
+        self.target_net = MLP(input_dim=input_dim, hidden_dim=64, output_dim=self.num_actions, lr=lr)
         self.target_net.copy_weights_from(self.q_net, tau=1.0)
 
         self.replay_buffer = ReplayBuffer(capacity=2500)
 
     def choose_action(self, state, explore=True):
         if explore and np.random.rand() < self.epsilon:
-            return int(np.random.choice(self.num_counters))
+            return int(np.random.choice(self.num_actions))
         feat = self.state_features(state)
         q_vals = self.q_net.forward(feat)[0]
         return int(np.argmax(q_vals))
 
-    def update(self, state, action, reward, next_state):
+    def update(self, state, action, reward, next_state, done=False):
         feat = self.state_features(state)
         next_feat = self.state_features(next_state)
-        self.replay_buffer.push(feat, action, reward, next_feat)
+        self.replay_buffer.push(feat, action, reward, next_feat, done=done)
         self.step_count += 1
 
-        # Train mini-batch from replay buffer
         if len(self.replay_buffer) >= self.batch_size:
-            states, actions, rewards, next_states = self.replay_buffer.sample(self.batch_size)
+            states, actions, rewards, next_states, dones = self.replay_buffer.sample(self.batch_size)
 
-            # Target Q-values: y = r + gamma * max_a' Q_target(s', a')
             next_q_target = self.target_net.forward(next_states)
             max_next_q = np.max(next_q_target, axis=1)
-            targets = rewards + self.gamma * max_next_q
+            targets = rewards + self.gamma * (1.0 - dones.astype(np.float32)) * max_next_q
 
-            # Current predictions
             current_q = self.q_net.forward(states)
 
-            # Gradient: error only on chosen action
             grad = np.zeros_like(current_q)
             for i in range(self.batch_size):
                 a = actions[i]
@@ -63,7 +60,6 @@ class DQNAgent(BaseQueueAgent):
 
             self.q_net.backward(grad)
 
-        # Target network update
         if self.step_count % self.target_update_freq == 0:
             self.target_net.copy_weights_from(self.q_net, tau=0.1)
 

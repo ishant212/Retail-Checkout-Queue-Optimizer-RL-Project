@@ -41,7 +41,7 @@ const MODELS = [
   { id: 'ddpg', name: 'DDPG', tag: 'Deterministic PG', icon: Target, color: '#a855f7' }
 ];
 
-export default function PolicyStudioView({ trainingHistory, onRetrain, isTraining }) {
+export default function PolicyStudioView({ trainingHistory, onRetrain, isTraining, maxQueueLen = 5 }) {
   const [selectedModel, setSelectedModel] = useState('q_learning');
   const [fixedLane2, setFixedLane2] = useState(0);
   const [policyData, setPolicyData] = useState(null);
@@ -69,11 +69,11 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
     return () => { isMounted = false; };
   }, [probeState, selectedModel]);
 
-  const probeChartData = probeResult ? [
-    { name: 'Lane 0 (Fast)', value: probeResult.qValues[0], fill: '#10b981' },
-    { name: 'Lane 1 (Mid)', value: probeResult.qValues[1], fill: '#3b82f6' },
-    { name: 'Lane 2 (Slow)', value: probeResult.qValues[2], fill: '#f59e0b' }
-  ] : [];
+  const probeChartData = probeResult?.qValues ? probeResult.qValues.map((v, i) => ({
+    name: `Lane ${i}`,
+    value: v,
+    fill: i === probeResult.bestAction ? '#10b981' : (i < 2 ? '#3b82f6' : (i < 6 ? '#06b6d4' : '#f59e0b'))
+  })) : [];
 
   const activeModelMeta = MODELS.find((m) => m.id === selectedModel) || MODELS[0];
   const ActiveIcon = activeModelMeta.icon;
@@ -96,7 +96,7 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
             <h2 style={{ fontSize: '1.25rem', margin: 0 }}>RL Policy & Value Studio: {activeModelMeta.name}</h2>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-            Inspect optimal lane selection policies, value convergence, and arbitrary state transitions across 6 RL architectures.
+            Inspect optimal lane selection policies, value convergence, and arbitrary state transitions across {MODELS.length} RL architectures.
           </p>
         </div>
 
@@ -105,26 +105,28 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
             className="btn btn-secondary btn-sm"
             onClick={handleRetrainCurrent}
             disabled={isTraining}
-            title="Retrain only this model"
+            title={`Retrain only ${activeModelMeta.name}`}
+            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            <RefreshCw size={14} className={isTraining ? 'spin-icon' : ''} />
-            Retrain {activeModelMeta.name}
+            <RefreshCw size={14} className={isTraining ? 'spin-icon' : ''} style={{ flexShrink: 0 }} />
+            <span>Retrain {activeModelMeta.name}</span>
           </button>
 
           <button
             className="btn btn-primary btn-sm"
             onClick={handleRetrainAll}
             disabled={isTraining}
-            title="Retrain all 6 models simultaneously"
+            title={`Retrain all ${MODELS.length} models simultaneously`}
+            style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
           >
-            <Sparkles size={14} className={isTraining ? 'spin-icon' : ''} />
-            Retrain All 6 Models
+            <Sparkles size={14} className={isTraining ? 'spin-icon' : ''} style={{ flexShrink: 0 }} />
+            <span>Retrain All {MODELS.length} Models</span>
           </button>
         </div>
       </div>
 
       {/* Model Selection Tabs Bar */}
-      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }}>
+      <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '6px', scrollbarWidth: 'thin' }}>
         {MODELS.map((m) => {
           const Icon = m.icon;
           const isSelected = m.id === selectedModel;
@@ -134,30 +136,32 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
               onClick={() => setSelectedModel(m.id)}
               className="btn"
               style={{
-                flex: '1 1 auto',
-                minWidth: '150px',
-                display: 'flex',
+                flex: '0 0 auto',
+                display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
-                padding: '10px 14px',
+                padding: '9px 16px',
                 borderRadius: '8px',
                 border: isSelected ? `2px solid ${m.color}` : '1px solid var(--border-color)',
                 background: isSelected ? `${m.color}20` : 'var(--bg-secondary)',
                 color: isSelected ? m.color : 'var(--text-primary)',
                 fontWeight: isSelected ? 700 : 500,
                 cursor: 'pointer',
+                whiteSpace: 'nowrap',
                 transition: 'all 0.15s ease'
               }}
             >
-              <Icon size={16} color={m.color} />
-              <span>{m.name}</span>
+              <Icon size={16} color={m.color} style={{ flexShrink: 0 }} />
+              <span style={{ whiteSpace: 'nowrap' }}>{m.name}</span>
               <span style={{
                 fontSize: '0.68rem',
-                padding: '1px 5px',
+                padding: '1px 6px',
                 borderRadius: '4px',
                 background: `${m.color}30`,
-                color: m.color
+                color: m.color,
+                whiteSpace: 'nowrap',
+                flexShrink: 0
               }}>
                 {m.tag}
               </span>
@@ -181,12 +185,12 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
           <input
             type="range"
             min="0"
-            max="5"
+            max={maxQueueLen}
             value={fixedLane2}
             onChange={(e) => setFixedLane2(Number(e.target.value))}
             style={{ flex: 1 }}
           />
-          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>5</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{maxQueueLen}</span>
         </div>
       </div>
 
@@ -286,8 +290,8 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
                       <div
                         key={cIdx}
                         style={{
-                          background: 'rgba(59, 130, 246, 0.15)',
-                          border: '1px solid rgba(59, 130, 246, 0.3)',
+                          background: 'var(--bg-tertiary)',
+                          border: '1px solid var(--border-color)',
                           borderRadius: '6px',
                           height: '40px',
                           display: 'flex',
@@ -295,8 +299,8 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
                           justifyContent: 'center',
                           fontFamily: 'monospace',
                           fontSize: '0.78rem',
-                          fontWeight: 600,
-                          color: val < -50 ? '#ef4444' : val < -25 ? '#f59e0b' : '#10b981'
+                          fontWeight: 700,
+                          color: val < -50 ? '#dc2626' : val < -25 ? '#d97706' : '#16a34a'
                         }}
                       >
                         {val}
@@ -358,11 +362,14 @@ export default function PolicyStudioView({ trainingHistory, onRetrain, isTrainin
                 <YAxis stroke="var(--text-muted)" fontSize={12} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     borderColor: 'var(--border-color)',
                     borderRadius: '8px',
-                    color: 'var(--text-primary)'
+                    color: 'var(--text-primary)',
+                    boxShadow: 'var(--shadow-md)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
                 <Bar dataKey="value" name="Action Metric Value" radius={[6, 6, 0, 0]} />
               </BarChart>

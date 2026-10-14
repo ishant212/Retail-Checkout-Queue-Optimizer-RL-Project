@@ -28,18 +28,18 @@ import {
 import { api } from '../api';
 
 const MODEL_PALETTE = {
-  double_dqn: '#10b981',       // Emerald (Proposed)
-  dqn: '#06b6d4',              // Cyan
-  ppo: '#8b5cf6',              // Purple
-  a2c: '#6366f1',              // Indigo
-  bandit: '#ec4899',           // Pink
-  q_learning: '#f59e0b',       // Amber
-  sarsa: '#d97706',            // Dark Amber
-  reinforce: '#f97316',        // Orange
-  ddpg: '#e11d48',             // Rose
-  min_estimated_wait: '#3b82f6',// Blue
-  shortest_queue: '#0284c7',   // Sky Blue
-  rule_based: '#ef4444'        // Red (Baseline)
+  double_dqn: '#f05136',       // FACE Prep Terracotta Coral (Proposed)
+  dqn: '#0284c7',              // Sky Blue
+  ppo: '#7c3aed',              // Purple
+  a2c: '#4f46e5',              // Indigo
+  bandit: '#d97706',           // Amber
+  q_learning: '#16a34a',       // Green
+  sarsa: '#0d9488',            // Teal
+  reinforce: '#ea580c',        // Orange
+  ddpg: '#db2777',             // Rose
+  min_estimated_wait: '#2563eb',// Blue
+  shortest_queue: '#0891b2',   // Cyan
+  rule_based: '#dc2626'        // Red (Baseline)
 };
 
 export default function ComparativeAnalysisView() {
@@ -122,8 +122,8 @@ export default function ComparativeAnalysisView() {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{
-                background: 'rgba(16, 185, 129, 0.15)',
-                color: '#10b981',
+                background: 'var(--accent-primary-light)',
+                color: 'var(--accent-primary)',
                 padding: '8px',
                 borderRadius: '8px'
               }}>
@@ -134,7 +134,7 @@ export default function ComparativeAnalysisView() {
               </h2>
             </div>
             <p style={{ color: 'var(--text-secondary)', marginTop: '6px', fontSize: '0.88rem' }}>
-              Comprehensive empirical evaluation comparing 12 allocation methods (Baselines, Heuristics, Tabular RL, Actor-Critic, & Deep RL).
+              Comprehensive empirical evaluation comparing {tableIV.length || 12} allocation methods (Baselines, Heuristics, Tabular RL, Actor-Critic, & Deep RL).
             </p>
           </div>
 
@@ -210,7 +210,9 @@ export default function ComparativeAnalysisView() {
         <div className="kpi-grid">
           <div className="glass-card kpi-card">
             <div className="kpi-header">
-              <span className="kpi-title">Proposed Double DQN Wait</span>
+              <span className="kpi-title">
+                {proposedModel?.strategy ? `${proposedModel.strategy.replace(' Manager', '')} Wait` : 'Proposed Model Wait'}
+              </span>
               <div className="kpi-icon-wrapper" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
                 <Clock size={20} />
               </div>
@@ -422,19 +424,22 @@ export default function ComparativeAnalysisView() {
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: 'var(--bg-secondary)',
+                  backgroundColor: '#ffffff',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
                   boxShadow: 'var(--shadow-md)',
-                  fontSize: '0.82rem'
+                  fontSize: '0.82rem',
+                  color: 'var(--text-primary)'
                 }}
+                itemStyle={{ color: 'var(--text-primary)' }}
+                labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
               />
               <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '0.82rem' }} />
 
               {selectedTimeModels.map((modelId) => {
                 const strat = tableIV.find((t) => t.id === modelId);
                 const color = MODEL_PALETTE[modelId] || '#9ca3af';
-                const isProposed = modelId === 'double_dqn';
+                const isProposed = strat?.isProposed ?? (modelId === 'double_dqn');
                 const isBaseline = modelId === 'rule_based';
 
                 return (
@@ -497,13 +502,17 @@ export default function ComparativeAnalysisView() {
                     name === 'hourlyStaffCost' ? 'Hourly Labor Cost' : 'Cost per Customer'
                   ]}
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     border: '1px solid var(--border-color)',
                     borderRadius: '8px',
-                    fontSize: '0.82rem'
+                    boxShadow: 'var(--shadow-md)',
+                    fontSize: '0.82rem',
+                    color: 'var(--text-primary)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
-                <Bar dataKey="hourlyStaffCost" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Hourly Labor Cost" />
+                <Bar dataKey="hourlyStaffCost" fill="#d97706" radius={[4, 4, 0, 0]} name="Hourly Labor Cost" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -512,7 +521,7 @@ export default function ComparativeAnalysisView() {
         {/* Dimension 3: Customer Throughput Comparison */}
         <div className="glass-card" style={{ padding: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-            <div style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#8b5cf6', padding: '6px', borderRadius: '6px' }}>
+            <div style={{ background: '#ede9fe', color: '#7c3aed', padding: '6px', borderRadius: '6px' }}>
               <Users size={18} />
             </div>
             <div>
@@ -545,13 +554,17 @@ export default function ComparativeAnalysisView() {
                 <Tooltip
                   formatter={(val) => [`${val} cust/min`, 'Customer Throughput']}
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     border: '1px solid var(--border-color)',
                     borderRadius: '8px',
-                    fontSize: '0.82rem'
+                    boxShadow: 'var(--shadow-md)',
+                    fontSize: '0.82rem',
+                    color: 'var(--text-primary)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
-                <Bar dataKey="throughput" fill="#8b5cf6" radius={[4, 4, 0, 0]} name="Throughput (cust/min)" />
+                <Bar dataKey="throughput" fill="#7c3aed" radius={[4, 4, 0, 0]} name="Throughput (cust/min)" />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -570,7 +583,7 @@ export default function ComparativeAnalysisView() {
               Comparing average customer wait time (seconds) across all 12 strategies, ordered by congestion clearance performance.
             </p>
           </div>
-          <span style={{ fontSize: '0.82rem', color: '#10b981', fontWeight: 600 }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--accent-success)', fontWeight: 600 }}>
             Lower is better (Faster queue clearance)
           </span>
         </div>
@@ -598,16 +611,19 @@ export default function ComparativeAnalysisView() {
                   'Avg Wait Time'
                 ]}
                 contentStyle={{
-                  backgroundColor: 'var(--bg-secondary)',
+                  backgroundColor: '#ffffff',
                   border: '1px solid var(--border-color)',
                   borderRadius: '8px',
                   boxShadow: 'var(--shadow-md)',
-                  fontSize: '0.82rem'
+                  fontSize: '0.82rem',
+                  color: 'var(--text-primary)'
                 }}
+                itemStyle={{ color: 'var(--text-primary)' }}
+                labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
               />
               <Bar
                 dataKey="avgWaitSec"
-                fill="#10b981"
+                fill="#f05136"
                 radius={[4, 4, 0, 0]}
                 name="Avg Wait Time (s)"
               />
@@ -625,7 +641,9 @@ export default function ComparativeAnalysisView() {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
           <div style={{ background: 'var(--bg-tertiary)', padding: '16px', borderRadius: '10px', borderLeft: '4px solid #10b981' }}>
-            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.92rem', color: '#10b981' }}>Deep RL (Double DQN - Proposed)</h4>
+            <h4 style={{ margin: '0 0 6px 0', fontSize: '0.92rem', color: '#10b981' }}>
+              Deep RL ({proposedModel?.strategy ? proposedModel.strategy.replace(' Manager', '') : 'Double DQN (Proposed)'})
+            </h4>
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               Decoupled action selection and Q-value evaluation eliminates maximization bias, yielding superior queue stability under non-stationary retail traffic.
             </p>

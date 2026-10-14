@@ -47,7 +47,7 @@ class MLP:
             self.out = self.z2
         return self.out
 
-    def backward(self, grad_output):
+    def backward(self, grad_output, return_grad_input=False):
         # grad_output shape: (batch_size, output_dim)
         if grad_output.ndim == 1:
             grad_output = grad_output.reshape(1, -1)
@@ -84,6 +84,9 @@ class MLP:
             v_hat = v / (1 - self.beta2 ** self.t)
             p -= self.lr * m_hat / (np.sqrt(v_hat) + self.eps)
 
+        dx = np.dot(dz1, self.W1.T)
+        return dx
+
     def copy_weights_from(self, source_net, tau=1.0):
         """Polyak soft update: target = tau * source + (1 - tau) * target"""
         self.W1 = tau * source_net.W1 + (1.0 - tau) * self.W1
@@ -91,34 +94,51 @@ class MLP:
         self.W2 = tau * source_net.W2 + (1.0 - tau) * self.W2
         self.b2 = tau * source_net.b2 + (1.0 - tau) * self.b2
 
+    def get_weights(self):
+        return {
+            "W1": self.W1.copy(),
+            "b1": self.b1.copy(),
+            "W2": self.W2.copy(),
+            "b2": self.b2.copy()
+        }
+
+    def set_weights(self, weights):
+        self.W1 = weights["W1"].copy()
+        self.b1 = weights["b1"].copy()
+        self.W2 = weights["W2"].copy()
+        self.b2 = weights["b2"].copy()
+
 
 class ReplayBuffer:
-    """Cyclic Experience Replay Buffer for off-policy deep RL."""
+    """Cyclic Experience Replay Buffer for off-policy deep RL with terminal flag support."""
     def __init__(self, capacity=2000):
         self.capacity = capacity
         self.buffer = []
         self.position = 0
 
-    def push(self, state_feat, action, reward, next_state_feat):
+    def push(self, state_feat, action, reward, next_state_feat, done=False):
+        item = (state_feat, action, reward, next_state_feat, bool(done))
         if len(self.buffer) < self.capacity:
             self.buffer.append(None)
-        self.buffer[self.position] = (state_feat, action, reward, next_state_feat)
+        self.buffer[self.position] = item
         self.position = (self.position + 1) % self.capacity
 
     def sample(self, batch_size):
         idxs = np.random.choice(len(self.buffer), batch_size, replace=False)
-        states, actions, rewards, next_states = [], [], [], []
+        states, actions, rewards, next_states, dones = [], [], [], [], []
         for i in idxs:
-            s, a, r, s_next = self.buffer[i]
-            states.append(s)
-            actions.append(a)
-            rewards.append(r)
-            next_states.append(s_next)
+            item = self.buffer[i]
+            states.append(item[0])
+            actions.append(item[1])
+            rewards.append(item[2])
+            next_states.append(item[3])
+            dones.append(item[4] if len(item) > 4 else False)
         return (
             np.array(states, dtype=np.float32),
             np.array(actions, dtype=np.int32),
             np.array(rewards, dtype=np.float32),
-            np.array(next_states, dtype=np.float32)
+            np.array(next_states, dtype=np.float32),
+            np.array(dones, dtype=np.bool_)
         )
 
     def __len__(self):

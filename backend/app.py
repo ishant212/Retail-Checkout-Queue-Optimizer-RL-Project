@@ -45,6 +45,7 @@ def get_status():
         "activeModelName": active_agent.name,
         "activeModelType": active_agent.model_type,
         "trainedEpisodes": sim_service.trained_episodes,
+        "modelEpisodes": sim_service.model_episodes,
         "numCounters": sim_service.num_counters,
         "maxQueueLen": sim_service.max_queue_len,
         "serviceRates": sim_service.service_rates,
@@ -58,6 +59,7 @@ def get_status():
 def get_models():
     return jsonify({
         "activeModelId": sim_service.active_model_id,
+        "modelEpisodes": sim_service.model_episodes,
         "models": sim_service.get_models_overview()
     })
 
@@ -75,7 +77,8 @@ def select_model():
 @app.route("/api/train", methods=["POST"])
 def train():
     data = request.get_json() or {}
-    model_type = data.get("modelType", None)  # 'q_learning', 'sarsa', 'bandit', 'reinforce', 'a2c', 'ppo', or None/'all'
+    model_type = data.get("modelType", None)  # 'q_learning', 'sarsa', etc. or None/'all'
+    model_episodes = data.get("modelEpisodes", None)  # Dict mapping model_id -> episodes
     episodes = int(data.get("episodes", 250))
     steps_per_episode = int(data.get("stepsPerEpisode", 25))
     alpha = float(data.get("alpha", 0.1))
@@ -96,7 +99,8 @@ def train():
         epsilon_decay=epsilon_decay,
         min_epsilon=min_epsilon,
         service_rates=service_rates,
-        model_type=model_type
+        model_type=model_type,
+        model_episodes=model_episodes
     )
     return jsonify(make_serializable(result))
 
@@ -180,6 +184,45 @@ def get_comparative_analysis():
         scenario = request.args.get("scenario", "normal")
     result = sim_service.run_comparative_analysis(scenario_name=scenario)
     return jsonify(make_serializable(result))
+
+@app.route("/api/lanes", methods=["GET"])
+def get_lanes():
+    lanes_data = [
+        {
+            "id": l.lane_id,
+            "type": l.lane_type,
+            "isOpen": l.is_open,
+            "capacity": l.capacity,
+            "serviceRate": l.service_rate,
+            "operatingCost": l.operating_cost,
+            "maxBasket": l.max_basket,
+            "minBasket": l.min_basket,
+            "queueLength": l.queue_length,
+            "remainingCapacity": l.remaining_capacity,
+            "isIdle": l.is_idle
+        }
+        for l in sim_service.interactive_env.lanes
+    ]
+    return jsonify(make_serializable(lanes_data))
+
+@app.route("/api/lanes/update", methods=["POST"])
+def update_lane():
+    data = request.get_json() or {}
+    lane_id = int(data.get("laneId", 0))
+    if 0 <= lane_id < sim_service.num_counters:
+        lane = sim_service.interactive_env.lanes[lane_id]
+        if "type" in data:
+            lane.set_type(data["type"])
+        if "isOpen" in data:
+            lane.is_open = bool(data["isOpen"])
+        if "capacity" in data:
+            lane.capacity = max(1, min(20, int(data["capacity"])))
+        if "serviceRate" in data:
+            lane.service_rate = max(0.05, min(2.0, float(data["serviceRate"])))
+        if "operatingCost" in data:
+            lane.operating_cost = max(0.1, min(10.0, float(data["operatingCost"])))
+        return jsonify({"success": True, "laneId": lane_id})
+    return jsonify({"success": False, "error": f"Invalid laneId {lane_id}"}), 400
 
 
 

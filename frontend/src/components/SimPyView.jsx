@@ -46,13 +46,24 @@ export default function SimPyView({ initialData }) {
     served: s.customersServed
   }));
 
-  // Chart data for utilization
-  const utilizationChartData = summary.map((s) => ({
-    policy: s.label.replace(' (Off-Policy TD)', '').replace(' (On-Policy TD)', '').replace(' (w/ Baseline)', ''),
-    'Lane 0 (Fast: μ=0.6)': s.utilization[0] || 0,
-    'Lane 1 (Mid: μ=0.4)': s.utilization[1] || 0,
-    'Lane 2 (Slow: μ=0.3)': s.utilization[2] || 0
-  }));
+  // Chart data for utilization across 10 lanes grouped by type
+  const utilizationChartData = summary.map((s) => {
+    const u = s.utilization || [];
+    const avgUtil = u.length ? (u.reduce((a, b) => a + b, 0) / u.length) : 0;
+    const expUtil = ((u[0] || 0) + (u[6] || 0)) / 2;
+    const stdUtil = ((u[1] || 0) + (u[2] || 0) + (u[4] || 0) + (u[5] || 0)) / 4;
+    const lrgUtil = ((u[3] || 0) + (u[7] || 0)) / 2;
+    const flxUtil = ((u[8] || 0) + (u[9] || 0)) / 2;
+
+    return {
+      policy: s.label.replace(' (Off-Policy TD)', '').replace(' (On-Policy TD)', '').replace(' (w/ Baseline)', ''),
+      'Overall Store Avg': Number(avgUtil.toFixed(1)),
+      'Express Lanes (L0, L6)': Number(expUtil.toFixed(1)),
+      'Standard Lanes (L1-2, L4-5)': Number(stdUtil.toFixed(1)),
+      'Large Basket (L3, L7)': Number(lrgUtil.toFixed(1)),
+      'Flexible Lanes (L8-9)': Number(flxUtil.toFixed(1))
+    };
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -64,7 +75,7 @@ export default function SimPyView({ initialData }) {
             <h2 style={{ fontSize: '1.25rem' }}>SimPy Multi-Policy Discrete-Event Simulation Arena</h2>
           </div>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '4px' }}>
-            Simulates continuous stochastic customer arrivals (`simpy.Environment`) and cashier server resources across all 6 RL algorithms.
+            Simulates continuous stochastic customer arrivals (`simpy.Environment`) and cashier server resources across all 9 RL algorithms and baseline heuristics.
           </p>
         </div>
 
@@ -181,15 +192,18 @@ export default function SimPyView({ initialData }) {
                 <YAxis stroke="var(--text-muted)" fontSize={12} label={{ value: 'Seconds', angle: -90, position: 'insideLeft' }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     borderColor: 'var(--border-color)',
                     borderRadius: '8px',
-                    color: 'var(--text-primary)'
+                    color: 'var(--text-primary)',
+                    boxShadow: 'var(--shadow-md)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
                 <Legend verticalAlign="top" height={36} />
-                <Bar dataKey="avgWaitTime" name="Average Wait Time (s)" fill="#10b981" radius={[6, 6, 0, 0]} />
-                <Bar dataKey="maxWaitTime" name="Maximum Peak Wait (s)" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="avgWaitTime" name="Average Wait Time (s)" fill="#f05136" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="maxWaitTime" name="Maximum Peak Wait (s)" fill="#d97706" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -211,16 +225,21 @@ export default function SimPyView({ initialData }) {
                 <YAxis domain={[0, 100]} stroke="var(--text-muted)" fontSize={12} label={{ value: '% Utilization', angle: -90, position: 'insideLeft' }} />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: 'var(--bg-secondary)',
+                    backgroundColor: '#ffffff',
                     borderColor: 'var(--border-color)',
                     borderRadius: '8px',
-                    color: 'var(--text-primary)'
+                    color: 'var(--text-primary)',
+                    boxShadow: 'var(--shadow-md)'
                   }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                  labelStyle={{ color: 'var(--text-primary)', fontWeight: 600 }}
                 />
                 <Legend verticalAlign="top" height={36} />
-                <Bar dataKey="Lane 0 (Fast: μ=0.6)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Lane 1 (Mid: μ=0.4)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Lane 2 (Slow: μ=0.3)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Overall Store Avg" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Express Lanes (L0, L6)" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Standard Lanes (L1-2, L4-5)" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Large Basket (L3, L7)" fill="#d97706" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Flexible Lanes (L8-9)" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -231,7 +250,7 @@ export default function SimPyView({ initialData }) {
       <div className="glass-card">
         <div className="card-header">
           <div className="card-title-group">
-            <span className="card-title">SimPy Discrete-Event Simulation Arena Matrix</span>
+            <span className="card-title">SimPy Discrete-Event 10-Lane Arena Matrix</span>
           </div>
           <span className="badge badge-success">Duration: {simTime}s | Arrival Rate λ: {arrivalRate}</span>
         </div>
@@ -245,26 +264,39 @@ export default function SimPyView({ initialData }) {
                   <th>Average Wait Time</th>
                   <th>Maximum Peak Wait</th>
                   <th>Avg Total Store Queue</th>
-                  <th>Lane 0 (μ=0.6)</th>
-                  <th>Lane 1 (μ=0.4)</th>
-                  <th>Lane 2 (μ=0.3)</th>
+                  <th>Store Avg Util</th>
+                  <th>Express Util (L0,6)</th>
+                  <th>Standard Util</th>
+                  <th>Large Basket Util</th>
+                  <th>Flexible Util</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.map((row) => (
-                  <tr key={row.policy}>
-                    <td style={{ fontWeight: 700, color: row.color || 'inherit' }}>{row.label}</td>
-                    <td>{row.customersServed} customers</td>
-                    <td style={{ fontWeight: 700, color: row.avgWaitTime < 2.5 ? '#10b981' : row.avgWaitTime > 4.0 ? '#ef4444' : 'inherit' }}>
-                      {row.avgWaitTime}s
-                    </td>
-                    <td>{row.maxWaitTime}s</td>
-                    <td>{row.avgTotalQueue}</td>
-                    <td>{row.utilization[0]}%</td>
-                    <td>{row.utilization[1]}%</td>
-                    <td>{row.utilization[2]}%</td>
-                  </tr>
-                ))}
+                {summary.map((row) => {
+                  const u = row.utilization || [];
+                  const avgUtil = u.length ? (u.reduce((a, b) => a + b, 0) / u.length) : 0;
+                  const expUtil = ((u[0] || 0) + (u[6] || 0)) / 2;
+                  const stdUtil = ((u[1] || 0) + (u[2] || 0) + (u[4] || 0) + (u[5] || 0)) / 4;
+                  const lrgUtil = ((u[3] || 0) + (u[7] || 0)) / 2;
+                  const flxUtil = ((u[8] || 0) + (u[9] || 0)) / 2;
+
+                  return (
+                    <tr key={row.policy}>
+                      <td style={{ fontWeight: 700, color: row.color || 'inherit' }}>{row.label}</td>
+                      <td>{row.customersServed} customers</td>
+                      <td style={{ fontWeight: 700, color: row.avgWaitTime < 2.5 ? '#10b981' : row.avgWaitTime > 4.0 ? '#ef4444' : 'inherit' }}>
+                        {row.avgWaitTime}s
+                      </td>
+                      <td>{row.maxWaitTime}s</td>
+                      <td>{row.avgTotalQueue}</td>
+                      <td style={{ fontWeight: 600 }}>{avgUtil.toFixed(1)}%</td>
+                      <td>{expUtil.toFixed(1)}%</td>
+                      <td>{stdUtil.toFixed(1)}%</td>
+                      <td>{lrgUtil.toFixed(1)}%</td>
+                      <td>{flxUtil.toFixed(1)}%</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
