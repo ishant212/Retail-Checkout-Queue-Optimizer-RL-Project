@@ -124,7 +124,8 @@ def run_benchmark():
 def interactive_reset():
     data = request.get_json() or {}
     model_id = data.get("modelId", None)
-    result = sim_service.reset_interactive(model_id=model_id)
+    scenario = data.get("scenario", "peak")
+    result = sim_service.reset_interactive(model_id=model_id, scenario=scenario)
     return jsonify(make_serializable(result))
 
 @app.route("/api/interactive/step", methods=["POST"])
@@ -132,9 +133,17 @@ def interactive_step():
     data = request.get_json() or {}
     action = data.get("action", None)
     mode = data.get("mode", sim_service.active_model_id)
+    scenario = data.get("scenario", None)
 
-    result = sim_service.step_interactive(action=action, mode=mode)
+    result = sim_service.step_interactive(action=action, mode=mode, scenario=scenario)
     return jsonify(make_serializable(result))
+
+@app.route("/api/interactive/scenario", methods=["POST"])
+def interactive_scenario():
+    data = request.get_json() or {}
+    scenario = data.get("scenario", "peak")
+    scen = sim_service.set_scenario(scenario)
+    return jsonify({"status": "success", "scenario": scen})
 
 @app.route("/api/policy", methods=["GET"])
 def get_policy():

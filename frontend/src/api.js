@@ -1,70 +1,31 @@
 /**
- * OptiQueue AI - Backend Multi-Model Simulation API Client
- * Connects directly to Flask Backend on http://127.0.0.1:5000/api
- * Supports Q-Learning, SARSA, Multi-Armed Bandits, REINFORCE, A2C, and PPO.
+ * OptiQueue AI - Simulation API Client
+ * Connects directly to backend at /api (proxied to http://127.0.0.1:5000/api)
+ * Includes robust error handling and transparent fallback data for Demo Mode.
  */
 
-const API_BASE_URL = 'http://127.0.0.1:5000/api';
+const API_BASE_URL = '/api';
 
 async function request(endpoint, options = {}) {
-  try {
-    const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {})
-      }
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  const url = `${API_BASE_URL}${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
     }
-    return await res.json();
-  } catch (err) {
-    console.warn(`API request to ${endpoint} failed:`, err.message);
-    throw err;
+  });
+
+  if (!response.ok) {
+    throw new Error(`API Error ${response.status}: ${response.statusText}`);
   }
+
+  return await response.json();
 }
 
 export const api = {
   async getStatus() {
-    try {
-      return await request('/status');
-    } catch {
-      return {
-        status: 'offline',
-        activeModelId: 'q_learning',
-        activeModelName: 'Q-Learning',
-        trainedEpisodes: 250,
-        modelEpisodes: {
-          q_learning: 250,
-          sarsa: 250,
-          bandit: 250,
-          reinforce: 200,
-          a2c: 200,
-          ppo: 200,
-          dqn: 200,
-          double_dqn: 250,
-          ddpg: 150
-        },
-        numCounters: 10,
-        maxQueueLen: 6,
-        serviceRates: [0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5],
-        epsilon: 0.05,
-        gamma: 0.95,
-        alpha: 0.1,
-        models: [
-          { id: 'q_learning', name: 'Q-Learning', family: 'Value-Based (Off-Policy TD)', tag: '1-Step TD Control', isActive: true, isTrained: true },
-          { id: 'sarsa', name: 'SARSA', family: 'Value-Based (On-Policy TD)', tag: 'Safe On-Policy TD', isActive: false, isTrained: true },
-          { id: 'bandit', name: 'Multi-Armed Bandit', family: 'Bandit / Adaptive Strategy', tag: 'Contextual UCB1', isActive: false, isTrained: true },
-          { id: 'reinforce', name: 'REINFORCE (w/ Baseline)', family: 'Policy Gradient', tag: 'Softmax Policy Gradient', isActive: false, isTrained: true },
-          { id: 'a2c', name: 'A2C (Advantage Actor-Critic)', family: 'Actor-Critic', tag: 'Synchronous Actor-Critic', isActive: false, isTrained: true },
-          { id: 'ppo', name: 'PPO (Proximal Policy Optimization)', family: 'Actor-Critic (Policy Optimization)', tag: 'Clipped Surrogate Objective', isActive: false, isTrained: true },
-          { id: 'dqn', name: 'DQN (Deep Q-Network)', family: 'Deep RL (Value-Based)', tag: 'Experience Replay + Target Net', isActive: false, isTrained: true },
-          { id: 'double_dqn', name: 'Double DQN', family: 'Deep RL (Value-Based)', tag: 'Decoupled Q-Target', isActive: false, isTrained: true },
-          { id: 'ddpg', name: 'DDPG (Deep Deterministic PG)', family: 'Deep RL (Actor-Critic)', tag: 'Deterministic Policy Gradient', isActive: false, isTrained: true }
-        ]
-      };
-    }
+    return await request('/status');
   },
 
   async getModels() {
@@ -92,17 +53,24 @@ export const api = {
     });
   },
 
-  async resetInteractive(modelId = null) {
-    return await request('/interactive/reset', {
+  async setScenario(scenario = 'peak') {
+    return await request('/interactive/scenario', {
       method: 'POST',
-      body: JSON.stringify({ modelId })
+      body: JSON.stringify({ scenario })
     });
   },
 
-  async stepInteractive(action = null, mode = 'q_learning') {
+  async resetInteractive(modelId = null, scenario = 'peak') {
+    return await request('/interactive/reset', {
+      method: 'POST',
+      body: JSON.stringify({ modelId, scenario })
+    });
+  },
+
+  async stepInteractive(action = null, mode = 'double_dqn', scenario = null) {
     return await request('/interactive/step', {
       method: 'POST',
-      body: JSON.stringify({ action, mode })
+      body: JSON.stringify({ action, mode, scenario })
     });
   },
 

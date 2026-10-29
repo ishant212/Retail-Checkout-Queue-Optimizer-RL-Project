@@ -23,9 +23,9 @@ DEFAULT_10_LANE_TYPES = [
 ]
 
 DEFAULT_10_SERVICE_RATES = [0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5]
-DEFAULT_10_CAPACITIES = [6] * 10
+DEFAULT_10_CAPACITIES = [6, 6, 8, 8, 8, 8, 8, 8, 8, 6]
 DEFAULT_10_OPERATING_COSTS = [1.0, 1.0, 1.2, 1.2, 1.2, 1.2, 1.5, 1.5, 1.2, 1.2]
-DEFAULT_10_INITIAL_OPEN = [True, True, True, True, False, False, True, False, True, False]
+DEFAULT_10_INITIAL_OPEN = [True, True, True, True, True, True, True, True, True, True]
 
 
 TABULAR_FEATURE_DIM = 35

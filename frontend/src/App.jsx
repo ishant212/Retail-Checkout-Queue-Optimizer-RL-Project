@@ -1,414 +1,400 @@
-import React, { useState, useEffect, useRef } from 'react';
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
-import OverviewView from './components/OverviewView';
-import PolicyStudioView from './components/PolicyStudioView';
-import SimPyView from './components/SimPyView';
-import BenchmarkLogsView from './components/BenchmarkLogsView';
-import ConfigModal from './components/ConfigModal';
-import CheckoutLanesView from './components/CheckoutLanesView';
-import SimulationControls from './components/SimulationControls';
-import ComparativeAnalysisView from './components/ComparativeAnalysisView';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import SimulationHeader from './components/SimulationHeader';
+import SimulationPage from './components/SimulationPage';
+import AnalyticsPage from './components/AnalyticsPage';
+import RLTrainingPage from './components/RLTrainingPage';
+import SettingsPage from './components/SettingsPage';
 import { api } from './api';
+import {
+  INITIAL_QUEUES,
+  INITIAL_LANE_CUSTOMERS,
+  INITIAL_Q_VALUES,
+  LANE_CONFIG
+} from './simulationTypes';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('overview');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  // Navigation
+  const [activeTab, setActiveTab] = useState('simulation'); // 'simulation' | 'analytics' | 'training' | 'settings'
+  const [isBackendConnected, setIsBackendConnected] = useState(false);
 
-  // Status & Telemetry
-  const [backendConnected, setBackendConnected] = useState(false);
-  const [trainedEpisodes, setTrainedEpisodes] = useState(250);
-  const [modelEpisodes, setModelEpisodes] = useState({
-    q_learning: 250,
-    sarsa: 250,
-    bandit: 250,
-    reinforce: 200,
-    a2c: 200,
-    ppo: 200,
-    dqn: 200,
-    double_dqn: 250,
-    ddpg: 150
-  });
-  const [serviceRates, setServiceRates] = useState([0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5]);
-  const [maxQueueLen, setMaxQueueLen] = useState(6);
+  // Active Model
+  const [activeModelId, setActiveModelId] = useState('double_dqn');
+  const [activeModelName, setActiveModelName] = useState('Double DQN');
   const [availableModels, setAvailableModels] = useState([]);
+  const [episode, setEpisode] = useState(2450);
 
-  // Interactive Simulation State (10 Lanes & 10 States)
-  const [currentQueues, setCurrentQueues] = useState(Array(10).fill(0));
-  const [openStatus, setOpenStatus] = useState([true, true, true, true, false, false, false, false, false, false]);
-  const [laneTypes, setLaneTypes] = useState(['express', 'standard', 'standard', 'large_basket', 'standard', 'standard', 'express', 'large_basket', 'flexible', 'flexible']);
-  const [capacities, setCapacities] = useState([4, 6, 6, 8, 6, 6, 4, 8, 6, 6]);
-  const [currentServing, setCurrentServing] = useState(Array(10).fill(null));
-  const [incomingBasketSize, setIncomingBasketSize] = useState(5);
-  const [isExpressEligible, setIsExpressEligible] = useState(true);
-  const [counterUtilization, setCounterUtilization] = useState(Array(10).fill(0));
-  const [lastAction, setLastAction] = useState(null);
-  const [lastActionValid, setLastActionValid] = useState(true);
-  const [lastActionReason, setLastActionReason] = useState('');
-  const [lastServed, setLastServed] = useState(Array(10).fill(false));
-  const [qValues, setQValues] = useState(Array(10).fill(0));
-  const [allQValues, setAllQValues] = useState(Array(41).fill(0));
-  const [recommendedAction, setRecommendedAction] = useState(0);
-  const [rewardBreakdown, setRewardBreakdown] = useState({});
-  const [stateComponents, setStateComponents] = useState({});
-  const [congestionDuration, setCongestionDuration] = useState({ step: 0, continuous: 0, total: 0 });
-
-  // Active Model & Policy Controls (Defaults to Proposed Double DQN)
+  // Simulation Controls
   const [isPlaying, setIsPlaying] = useState(false);
-  const [mode, setMode] = useState('double_dqn');
-  const [speed, setSpeed] = useState(1000);
+  const [speedMultiplier, setSpeedMultiplier] = useState(1);
+  const [simSeconds, setSimSeconds] = useState(754); // 00:12:34
   const [stepCount, setStepCount] = useState(0);
-  const [totalReward, setTotalReward] = useState(0);
+  const [scenario, setScenario] = useState('peak'); // 'off_peak' | 'normal' | 'peak'
 
-  // Benchmark & Historical Data
-  const [benchmarkData, setBenchmarkData] = useState(null);
-  const [isBenchmarking, setIsBenchmarking] = useState(false);
-  const [trainingHistory, setTrainingHistory] = useState([]);
-  const [isTraining, setIsTraining] = useState(false);
-  const [simpyData, setSimpyData] = useState(null);
+  // Simulation Arena State (10 Lanes)
+  const [currentQueues, setCurrentQueues] = useState(INITIAL_QUEUES);
+  const [openStatus, setOpenStatus] = useState([true, true, true, true, true, true, true, true, true, true]);
+  const [laneTypes, setLaneTypes] = useState([
+    'express',
+    'express',
+    'standard',
+    'standard',
+    'standard',
+    'standard',
+    'standard',
+    'standard',
+    'large_basket',
+    'flexible'
+  ]);
+  const [capacities, setCapacities] = useState([6, 6, 8, 8, 8, 8, 8, 8, 8, 6]);
+  const [serviceRates, setServiceRates] = useState([0.8, 0.8, 0.5, 0.5, 0.5, 0.5, 0.35, 0.35, 0.5, 0.5]);
+  const [laneCustomers, setLaneCustomers] = useState(INITIAL_LANE_CUSTOMERS);
 
-  const autoPlayTimerRef = useRef(null);
+  // RL Decision State
+  const [recommendedAction, setRecommendedAction] = useState(2);
+  const [actionSemantic, setActionSemantic] = useState('Route to Lane #2');
+  const [qValues, setQValues] = useState(INITIAL_Q_VALUES);
+  const [policyUpdate, setPolicyUpdate] = useState({
+    modelId: 'double_dqn',
+    modelName: 'Double DQN',
+    epsilon: 0.1,
+    gamma: 0.95,
+    alpha: 0.1,
+    tdTarget: 2.84,
+    tdError: 0.124
+  });
 
-  // Initial Data Fetch
+  // Incoming Customer & Countdown
+  const [incomingCustomer, setIncomingCustomer] = useState({
+    id: 'C#1055',
+    basket: 7,
+    isExpress: false,
+    arrivalTime: '00:12:34'
+  });
+  const [nextArrivalSeconds, setNextArrivalSeconds] = useState(12);
+
+  // KPIs
+  const [totalCustomers, setTotalCustomers] = useState(1054);
+  const [servedCustomers, setServedCustomers] = useState(1012);
+  const [currentlyInStore, setCurrentlyInStore] = useState(42);
+  const [avgWaitTime, setAvgWaitTime] = useState(2.8);
+  const [throughput, setThroughput] = useState(43.2);
+  const [totalLaborCost, setTotalLaborCost] = useState(148.0);
+  const [avgQueueLength, setAvgQueueLength] = useState(4.2);
+
+  // Charts Historical Data
+  const [waitTimeHistory, setWaitTimeHistory] = useState([
+    { time: '0', wait: 2.1 },
+    { time: '5', wait: 4.2 },
+    { time: '10', wait: 4.8 },
+    { time: '15', wait: 3.5 },
+    { time: '20', wait: 4.3 },
+    { time: '25', wait: 2.7 },
+    { time: '30', wait: 2.8 }
+  ]);
+  const [throughputHistory, setThroughputHistory] = useState([
+    { time: '0', tp: 22 },
+    { time: '5', tp: 34 },
+    { time: '10', tp: 41 },
+    { time: '15', tp: 48 },
+    { time: '20', tp: 62 },
+    { time: '25', tp: 51 },
+    { time: '30', tp: 43.2 }
+  ]);
+  const [rewardHistory, setRewardHistory] = useState([]);
+
+  // Auto-play interval ref
+  const playTimerRef = useRef(null);
+  const clockTimerRef = useRef(null);
+
+  // Format Elapsed Time HH:MM:SS
+  const formatSimTime = (totalSec) => {
+    const hrs = String(Math.floor(totalSec / 3600)).padStart(2, '0');
+    const mins = String(Math.floor((totalSec % 3600) / 60)).padStart(2, '0');
+    const secs = String(totalSec % 60).padStart(2, '0');
+    return `${hrs}:${mins}:${secs}`;
+  };
+
+  // Helper to apply authoritative state from simulation backend
+  const applySimulationPayload = useCallback((data) => {
+    if (!data) return;
+    if (data.state) setCurrentQueues(data.state);
+    if (data.openStatus) setOpenStatus(data.openStatus);
+    if (data.laneTypes) setLaneTypes(data.laneTypes);
+    if (data.capacities) setCapacities(data.capacities);
+    if (data.serviceRates) setServiceRates(data.serviceRates);
+    if (data.action !== undefined && data.action < 10) {
+      setRecommendedAction(data.action);
+    } else if (data.recommendedAction !== undefined) {
+      setRecommendedAction(data.recommendedAction);
+    }
+    if (data.actionSemantic) {
+      setActionSemantic(data.actionSemantic);
+    }
+    if (data.laneCustomers) {
+      setLaneCustomers(data.laneCustomers);
+    }
+    if (data.policyUpdate) {
+      setPolicyUpdate(data.policyUpdate);
+      if (data.policyUpdate.topQValues) {
+        setQValues(data.policyUpdate.topQValues);
+      }
+    }
+    if (data.scenario) {
+      setScenario(data.scenario);
+    }
+
+    // Authoritative Metrics from backend
+    if (data.totalCustomers !== undefined) setTotalCustomers(data.totalCustomers);
+    if (data.servedCustomers !== undefined) setServedCustomers(data.servedCustomers);
+    if (data.currentlyInStore !== undefined) setCurrentlyInStore(data.currentlyInStore);
+    if (data.avgWaitTime !== undefined) setAvgWaitTime(data.avgWaitTime);
+    if (data.throughput !== undefined) setThroughput(data.throughput);
+    if (data.totalLaborCost !== undefined) setTotalLaborCost(data.totalLaborCost);
+    if (data.avgQueueLength !== undefined) setAvgQueueLength(data.avgQueueLength);
+  }, []);
+
+  // Initialize Backend Connection & State
   useEffect(() => {
     let isMounted = true;
 
-    async function initData() {
+    async function init() {
       try {
         const status = await api.getStatus();
         if (isMounted) {
-          setBackendConnected(status.status === 'online');
-          setTrainedEpisodes(status.trainedEpisodes);
-          if (status.modelEpisodes) setModelEpisodes(status.modelEpisodes);
-          setServiceRates(status.serviceRates);
-          setMaxQueueLen(status.maxQueueLen);
+          setIsBackendConnected(status.status === 'online');
           if (status.models) setAvailableModels(status.models);
+          if (status.activeModelId) setActiveModelId(status.activeModelId);
+          if (status.activeModelName) setActiveModelName(status.activeModelName);
         }
 
-        // Run default multi-model benchmark
-        const bench = await api.runBenchmark(100, status.serviceRates);
-        if (isMounted) {
-          setBenchmarkData(bench);
-        }
-
-        // Reset interactive state
-        const initialInteractive = await api.resetInteractive('double_dqn');
-        if (isMounted) {
-          if (initialInteractive.state) setCurrentQueues(initialInteractive.state);
-          if (initialInteractive.openStatus) setOpenStatus(initialInteractive.openStatus);
-          if (initialInteractive.laneTypes) setLaneTypes(initialInteractive.laneTypes);
-          if (initialInteractive.capacities) setCapacities(initialInteractive.capacities);
-          if (initialInteractive.currentServing) setCurrentServing(initialInteractive.currentServing);
-          if (initialInteractive.counterUtilization) setCounterUtilization(initialInteractive.counterUtilization);
-          if (initialInteractive.incomingBasketSize !== undefined) setIncomingBasketSize(initialInteractive.incomingBasketSize);
-          if (initialInteractive.isExpressEligible !== undefined) setIsExpressEligible(initialInteractive.isExpressEligible);
-          setQValues(initialInteractive.qValues || Array(10).fill(0));
-          if (initialInteractive.allQValues) setAllQValues(initialInteractive.allQValues);
-          setRecommendedAction(initialInteractive.recommendedAction ?? 0);
-          setStateComponents(initialInteractive.stateComponents || {});
-          setCongestionDuration(initialInteractive.congestionDuration || {});
-        }
-
-        // Fetch initial SimPy arena run
-        const simpyRes = await api.runSimPy({ arrivalRate: 1.0, simulationTime: 120 });
-        if (isMounted) {
-          setSimpyData(simpyRes);
+        const initial = await api.resetInteractive('double_dqn', 'peak');
+        if (isMounted && initial) {
+          applySimulationPayload(initial);
         }
       } catch (err) {
-        console.warn('Initial backend fetch encountered error, fallback active:', err);
+        console.warn('Backend connection warning:', err.message);
+        setIsBackendConnected(false);
       }
     }
 
-    initData();
-
-    // Health check ping interval
-    const pingInterval = setInterval(async () => {
-      try {
-        const s = await api.getStatus();
-        if (isMounted) {
-          setBackendConnected(s.status === 'online');
-          if (s.models) setAvailableModels(s.models);
-          if (s.modelEpisodes) setModelEpisodes(s.modelEpisodes);
-        }
-      } catch {
-        if (isMounted) setBackendConnected(false);
-      }
-    }, 8000);
-
+    init();
     return () => {
       isMounted = false;
-      clearInterval(pingInterval);
     };
-  }, []);
+  }, [applySimulationPayload]);
 
-  // Sync Q-values and action recommendation when mode switches
+  // Scenario Change Handler
+  const handleScenarioChange = useCallback(async (newScenario) => {
+    setScenario(newScenario);
+    try {
+      if (isBackendConnected) {
+        await api.setScenario(newScenario);
+        const resetData = await api.resetInteractive(activeModelId, newScenario);
+        if (resetData) {
+          applySimulationPayload(resetData);
+        }
+      }
+    } catch (err) {
+      console.warn('Error switching scenario:', err.message);
+    }
+  }, [isBackendConnected, activeModelId, applySimulationPayload]);
+
+  // Execution Step function (calls real backend or fallback generator)
+  const handleStep = useCallback(async () => {
+    setStepCount((prev) => prev + 1);
+    setSimSeconds((prev) => prev + 2);
+
+    try {
+      if (isBackendConnected) {
+        const stepData = await api.stepInteractive(null, activeModelId, scenario);
+        if (stepData) {
+          applySimulationPayload(stepData);
+
+          // Update incoming customer
+          const nextBasket = stepData.incomingBasketSize || Math.floor(Math.random() * 14) + 1;
+          setIncomingCustomer({
+            id: `C#${1055 + stepCount + 1}`,
+            basket: nextBasket,
+            isExpress: nextBasket <= 5,
+            arrivalTime: formatSimTime(simSeconds + 2)
+          });
+          setNextArrivalSeconds(Math.floor(Math.random() * 10) + 8);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('Step interactive error:', err.message);
+    }
+
+    // Deterministic simulation step fallback for Demo Mode
+    setCurrentQueues((prev) => {
+      const next = [...prev];
+      const target = (recommendedAction + 1) % 10;
+      setRecommendedAction(target);
+      setActionSemantic(`Route to Lane #${target}`);
+
+      // Customer enters target lane
+      if (next[target] < 6) next[target] += 1;
+      // Some other lane finishes checkout
+      const finishedLane = (target + 3) % 10;
+      if (next[finishedLane] > 1) next[finishedLane] -= 1;
+
+      return next;
+    });
+
+    setServedCustomers((prev) => prev + 1);
+    setTotalCustomers((prev) => prev + 1);
+    const nextBasket = Math.floor(Math.random() * 14) + 1;
+    setIncomingCustomer({
+      id: `C#${1055 + stepCount + 1}`,
+      basket: nextBasket,
+      isExpress: nextBasket <= 5,
+      arrivalTime: formatSimTime(simSeconds + 2)
+    });
+    setNextArrivalSeconds(Math.floor(Math.random() * 10) + 8);
+  }, [
+    isBackendConnected,
+    activeModelId,
+    scenario,
+    stepCount,
+    simSeconds,
+    recommendedAction,
+    applySimulationPayload
+  ]);
+
+  // Next arrival countdown timer
   useEffect(() => {
-    if (['q_learning', 'sarsa', 'bandit', 'reinforce', 'a2c', 'ppo', 'dqn', 'double_dqn', 'ddpg'].includes(mode)) {
-      api.selectModel(mode).catch(() => {});
-      api.getQValues(currentQueues[0] || 0, currentQueues[1] || 0, currentQueues[2] || 0, mode)
-        .then((res) => {
-          setQValues(res.qValues || Array(10).fill(0));
-          if (res.allQValues) setAllQValues(res.allQValues);
-          setRecommendedAction(res.bestAction ?? 0);
-        })
-        .catch(console.error);
-    }
-  }, [mode]);
+    const timer = setInterval(() => {
+      setNextArrivalSeconds((prev) => {
+        if (prev <= 1) {
+          if (isPlaying) {
+            handleStep();
+          }
+          return 14;
+        }
+        return prev - 1;
+      });
+    }, 1000);
 
-  // Step Handler
-  const handleStep = async (actionOverride = null) => {
-    try {
-      const res = await api.stepInteractive(actionOverride, mode);
-      setCurrentQueues(res.nextState);
-      setLastAction(res.action);
-      setLastServed(res.served || Array(10).fill(false));
-      setQValues(res.qValues || Array(10).fill(0));
-      if (res.allQValues) setAllQValues(res.allQValues);
-      setRecommendedAction(res.recommendedAction);
-      setStepCount(res.step);
-      setTotalReward((prev) => res.cumulativeReward ?? (prev + res.reward));
+    return () => clearInterval(timer);
+  }, [isPlaying, handleStep]);
 
-      if (res.openStatus) setOpenStatus(res.openStatus);
-      if (res.laneTypes) setLaneTypes(res.laneTypes);
-      if (res.capacities) setCapacities(res.capacities);
-      if (res.currentServing) setCurrentServing(res.currentServing);
-      if (res.incomingBasketSize !== undefined) setIncomingBasketSize(res.incomingBasketSize);
-      if (res.isExpressEligible !== undefined) setIsExpressEligible(res.isExpressEligible);
-      if (res.counterUtilization) setCounterUtilization(res.counterUtilization);
-      setLastActionValid(res.actionValid ?? true);
-      setLastActionReason(res.actionReason ?? '');
-      setRewardBreakdown(res.rewardBreakdown ?? {});
-      setStateComponents(res.stateComponents ?? {});
-      setCongestionDuration(res.congestionDuration ?? {});
-    } catch (err) {
-      console.error('Interactive step failed:', err);
-    }
-  };
-
-  // Reset Handler
-  const handleReset = async () => {
-    setIsPlaying(false);
-    try {
-      const res = await api.resetInteractive(mode);
-      setCurrentQueues(res.state);
-      setLastAction(null);
-      setLastServed(Array(10).fill(false));
-      setQValues(res.qValues || Array(10).fill(0));
-      if (res.allQValues) setAllQValues(res.allQValues);
-      setRecommendedAction(res.recommendedAction);
-      setStepCount(0);
-      setTotalReward(0);
-
-      if (res.openStatus) setOpenStatus(res.openStatus);
-      if (res.laneTypes) setLaneTypes(res.laneTypes);
-      if (res.capacities) setCapacities(res.capacities);
-      if (res.currentServing) setCurrentServing(res.currentServing);
-      if (res.incomingBasketSize !== undefined) setIncomingBasketSize(res.incomingBasketSize);
-      if (res.isExpressEligible !== undefined) setIsExpressEligible(res.isExpressEligible);
-      setLastActionValid(true);
-      setLastActionReason('Session Reset');
-      setRewardBreakdown({});
-      setStateComponents(res.stateComponents ?? {});
-      setCongestionDuration(res.congestionDuration ?? {});
-    } catch (err) {
-      console.error('Reset failed:', err);
-    }
-  };
-
-  // Auto-play loop
+  // Simulation execution runner when isPlaying is true
   useEffect(() => {
     if (isPlaying) {
-      autoPlayTimerRef.current = setInterval(() => {
+      const intervalMs = Math.max(200, 1000 / speedMultiplier);
+      playTimerRef.current = setInterval(() => {
         handleStep();
-      }, speed);
-    } else {
-      if (autoPlayTimerRef.current) {
-        clearInterval(autoPlayTimerRef.current);
-        autoPlayTimerRef.current = null;
-      }
+      }, intervalMs);
+    } else if (playTimerRef.current) {
+      clearInterval(playTimerRef.current);
+      playTimerRef.current = null;
     }
 
     return () => {
-      if (autoPlayTimerRef.current) {
-        clearInterval(autoPlayTimerRef.current);
-      }
+      if (playTimerRef.current) clearInterval(playTimerRef.current);
     };
-  }, [isPlaying, speed, mode]);
+  }, [isPlaying, speedMultiplier, handleStep]);
 
-  // Run Benchmark Handler
-  const handleRunBenchmark = async () => {
-    setIsBenchmarking(true);
+  // Change model
+  const handleSelectModel = async (modelId) => {
     try {
-      const res = await api.runBenchmark(100, serviceRates, mode);
-      setBenchmarkData(res);
+      setActiveModelId(modelId);
+      const res = await api.selectModel(modelId);
+      if (res.activeModelName) setActiveModelName(res.activeModelName);
     } catch (err) {
-      console.error('Benchmark run failed:', err);
-    } finally {
-      setIsBenchmarking(false);
+      console.warn('Select model error:', err.message);
     }
   };
 
-  // Retrain Handler
-  const handleRetrain = async (config) => {
-    setIsTraining(true);
-    try {
-      const res = await api.train(config);
-      setTrainedEpisodes(res.episodes);
-      if (res.modelEpisodes) setModelEpisodes(res.modelEpisodes);
-      setTrainingHistory(res.history);
-      if (config.serviceRates) {
-        setServiceRates(config.serviceRates);
-      }
-      // Re-run multi-model benchmark with newly trained parameters
-      const bench = await api.runBenchmark(100, config.serviceRates);
-      setBenchmarkData(bench);
-      // Re-run SimPy arena
-      const simpyRes = await api.runSimPy({ arrivalRate: 1.0, simulationTime: 120 });
-      setSimpyData(simpyRes);
-    } catch (err) {
-      console.error('Training failed:', err);
-    } finally {
-      setIsTraining(false);
+  // Update Lane Configuration
+  const handleUpdateLaneConfig = (laneId, updates) => {
+    if (updates.isOpen !== undefined) {
+      setOpenStatus((prev) => {
+        const copy = [...prev];
+        copy[laneId] = updates.isOpen;
+        return copy;
+      });
     }
   };
 
-  const totalWaiting = currentQueues.reduce((a, b) => a + b, 0);
+  const activeCashiersCount = openStatus.filter(Boolean).length;
 
   return (
-    <div className="app-container">
-      {/* Sidebar Navigation */}
-      <Sidebar
+    <div className="w-screen h-screen flex flex-col bg-[#0a0e17] text-slate-100 overflow-hidden font-sans">
+      {/* 1. Compact Top Navigation Bar */}
+      <SimulationHeader
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        isCollapsed={isSidebarCollapsed}
-        setIsCollapsed={setIsSidebarCollapsed}
-        backendConnected={backendConnected}
-        trainedEpisodes={trainedEpisodes}
+        onTabChange={(tab) => setActiveTab(tab)}
+        scenario={scenario}
+        onScenarioChange={handleScenarioChange}
+        isPlaying={isPlaying}
+        onTogglePlay={() => setIsPlaying(!isPlaying)}
+        speed={speedMultiplier}
+        onSpeedChange={(val) => setSpeedMultiplier(val)}
+        simTime={formatSimTime(simSeconds)}
+        episode={episode}
+        activeAlgorithm={activeModelName}
+        isBackendConnected={isBackendConnected}
+        onStep={handleStep}
       />
 
-      {/* Main Content Area */}
-      <div className="main-content">
-        <Header
-          activeTab={activeTab}
-          onRunBenchmark={handleRunBenchmark}
-          onResetQueues={handleReset}
-          isBenchmarking={isBenchmarking}
-          totalWaiting={totalWaiting}
-          onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-          activeModelName={availableModels.find((m) => m.id === mode)?.name || mode.replace('_', ' ').toUpperCase()}
-        />
+      {/* 2. Main View Area based on Active Tab */}
+      <main className="flex-1 overflow-hidden flex flex-col">
+        {activeTab === 'simulation' && (
+          <SimulationPage
+            currentQueues={currentQueues}
+            openStatus={openStatus}
+            capacities={capacities}
+            serviceRates={serviceRates}
+            laneTypes={laneTypes}
+            laneCustomers={laneCustomers}
+            recommendedAction={recommendedAction}
+            actionSemantic={actionSemantic}
+            qValues={qValues}
+            policyUpdate={policyUpdate}
+            stepCount={stepCount}
+            activeAlgorithm={activeModelName}
+            totalCustomers={totalCustomers}
+            currentlyInStore={currentlyInStore}
+            servedCustomers={servedCustomers}
+            avgWaitTime={avgWaitTime}
+            throughput={throughput}
+            activeCashiers={activeCashiersCount}
+            totalLaborCost={totalLaborCost}
+            avgQueueLength={avgQueueLength}
+            incomingCustomer={incomingCustomer}
+            nextArrivalSeconds={nextArrivalSeconds}
+            waitTimeHistory={waitTimeHistory}
+            throughputHistory={throughputHistory}
+            rewardHistory={rewardHistory}
+            onSelectAction={(act) => setRecommendedAction(act)}
+          />
+        )}
 
-        <main className="page-body">
-          {activeTab === 'overview' && (
-            <OverviewView
-              benchmarkData={benchmarkData}
-              currentQueues={currentQueues}
-              serviceRates={serviceRates}
-              openStatus={openStatus}
-              laneTypes={laneTypes}
-              capacities={capacities}
-              currentServing={currentServing}
-              incomingBasketSize={incomingBasketSize}
-              isExpressEligible={isExpressEligible}
-              counterUtilization={counterUtilization}
-              maxQueueLen={maxQueueLen}
-              lastAction={lastAction}
-              lastServed={lastServed}
-              qValues={qValues}
-              allQValues={allQValues}
-              recommendedAction={recommendedAction}
-              isPlaying={isPlaying}
-              onTogglePlay={() => setIsPlaying(!isPlaying)}
-              onStep={() => handleStep()}
-              onReset={handleReset}
-              mode={mode}
-              setMode={setMode}
-              speed={speed}
-              setSpeed={setSpeed}
-              stepCount={stepCount}
-              totalReward={totalReward}
-              lastActionValid={lastActionValid}
-              lastActionReason={lastActionReason}
-              rewardBreakdown={rewardBreakdown}
-              stateComponents={stateComponents}
-              congestionDuration={congestionDuration}
-              onManualDispatch={(laneId) => handleStep(laneId)}
-              onManualAction={(act) => handleStep(act)}
-            />
-          )}
+        {activeTab === 'analytics' && (
+          <AnalyticsPage isBackendConnected={isBackendConnected} />
+        )}
 
-          {activeTab === 'comparison' && (
-            <ComparativeAnalysisView />
-          )}
+        {activeTab === 'training' && (
+          <RLTrainingPage
+            activeModelId={activeModelId}
+            availableModels={availableModels}
+            onSelectModel={handleSelectModel}
+            isBackendConnected={isBackendConnected}
+          />
+        )}
 
-          {activeTab === 'simulation' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-              <SimulationControls
-                isPlaying={isPlaying}
-                onTogglePlay={() => setIsPlaying(!isPlaying)}
-                onStep={() => handleStep()}
-                onReset={handleReset}
-                mode={mode}
-                setMode={setMode}
-                speed={speed}
-                setSpeed={setSpeed}
-                stepCount={stepCount}
-                totalReward={totalReward}
-                lastActionValid={lastActionValid}
-                lastActionReason={lastActionReason}
-                onManualAction={(act) => handleStep(act)}
-              />
-
-              <CheckoutLanesView
-                queues={currentQueues}
-                maxQueueLen={maxQueueLen}
-                serviceRates={serviceRates}
-                openStatus={openStatus}
-                laneTypes={laneTypes}
-                capacities={capacities}
-                currentServing={currentServing}
-                incomingBasketSize={incomingBasketSize}
-                isExpressEligible={isExpressEligible}
-                counterUtilization={counterUtilization}
-                lastAction={lastAction}
-                lastServed={lastServed}
-                qValues={qValues}
-                recommendedAction={recommendedAction}
-                mode={mode}
-                onManualDispatch={(laneId) => handleStep(laneId)}
-                onManualAction={(act) => handleStep(act)}
-              />
-            </div>
-          )}
-
-          {activeTab === 'policy' && (
-            <PolicyStudioView
-              trainingHistory={trainingHistory}
-              onRetrain={handleRetrain}
-              isTraining={isTraining}
-              maxQueueLen={maxQueueLen}
-            />
-          )}
-
-          {activeTab === 'simpy' && (
-            <SimPyView initialData={simpyData} />
-          )}
-
-          {activeTab === 'benchmark' && (
-            <BenchmarkLogsView benchmarkData={benchmarkData} />
-          )}
-
-          {activeTab === 'config' && (
-            <ConfigModal
-              serviceRates={serviceRates}
-              modelEpisodes={modelEpisodes}
-              onUpdateConfig={handleRetrain}
-              isTraining={isTraining}
-            />
-          )}
-        </main>
-      </div>
+        {activeTab === 'settings' && (
+          <SettingsPage
+            openStatus={openStatus}
+            capacities={capacities}
+            serviceRates={serviceRates}
+            laneTypes={laneTypes}
+            onUpdateLaneConfig={handleUpdateLaneConfig}
+          />
+        )}
+      </main>
     </div>
   );
 }
